@@ -2065,7 +2065,6 @@ export class DeliveryService implements OnModuleInit {
     console.log('=== FIM NOTIFICAÇÃO DE NOVO PEDIDO (MOTOBOYS/ADMINS) ===');
   }
 
-<<<<<<< HEAD
   private parseReportDateFilter(dateValue: string, endOfDay = false): Date {
     const onlyDate = /^\d{4}-\d{2}-\d{2}$/.test(dateValue);
 
@@ -2154,8 +2153,6 @@ export class DeliveryService implements OnModuleInit {
     return true;
   }
 
-=======
->>>>>>> parent of 464b12c (Fix delivery report date filters)
   private buildDeliveriesWhere(
     userForRequest: UserEntity,
     queryParams: ListDeliveriesQueryDTO,
@@ -2220,35 +2217,7 @@ export class DeliveryService implements OnModuleInit {
     //   where['isActive'] = queryParams.isActive ? true : false;
     // }
 
-<<<<<<< HEAD
     // O filtro de data dos relatórios é aplicado em memória no listDeliveries.
-=======
-    if (queryParams.createdIn || queryParams.createdUntil) {
-      const dateField =
-        selectedStatuses.length > 0 &&
-        selectedStatuses.every((status) => status === StatusDelivery.FINISHED)
-          ? 'finishedAt'
-          : 'createdAt';
-      const dateFilter: Record<string, Date> = {};
-      const stringFilter: Record<string, string> = {};
-
-      if (queryParams.createdIn) {
-        dateFilter.$gte = new Date(queryParams.createdIn);
-        stringFilter.$gte = queryParams.createdIn;
-      }
-
-      if (queryParams.createdUntil) {
-        dateFilter.$lte = new Date(queryParams.createdUntil);
-        stringFilter.$lte = queryParams.createdUntil;
-      }
-
-      // Garante compatibilidade: aceita registros Date (novos) e string (legados).
-      where['$or'] = [
-        { [dateField]: dateFilter },
-        { [dateField]: stringFilter },
-      ];
-    }
->>>>>>> parent of 464b12c (Fix delivery report date filters)
 
     return where;
   }
