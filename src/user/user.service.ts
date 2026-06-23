@@ -205,7 +205,9 @@ export class UserService {
       const useIfoodIntegration =
         data.useIfoodIntegration ?? userToUpdate.useIfoodIntegration ?? false;
       const usesExternalIfoodPdv = useIfoodIntegration
-        ? (data.usesExternalIfoodPdv ?? userToUpdate.usesExternalIfoodPdv ?? false)
+        ? (data.usesExternalIfoodPdv ??
+          userToUpdate.usesExternalIfoodPdv ??
+          false)
         : false;
 
       const ifoodMerchantId = useIfoodIntegration
@@ -252,7 +254,9 @@ export class UserService {
           ifoodMerchantId !== String(userToUpdate.ifoodMerchantId || '').trim(),
         ifoodMerchantsChanged:
           JSON.stringify(ifoodMerchants) !==
-          JSON.stringify(this.normalizeIfoodMerchants(userToUpdate.ifoodMerchants)),
+          JSON.stringify(
+            this.normalizeIfoodMerchants(userToUpdate.ifoodMerchants),
+          ),
         isActiveChanged:
           Boolean(changedUser.isActive) !== Boolean(userToUpdate.isActive),
         usesExternalIfoodPdvChanged:
@@ -289,10 +293,10 @@ export class UserService {
       changes.useIfoodIntegrationChanged ||
       changes.ifoodMerchantIdChanged ||
       changes.isActiveChanged ||
-      changes.usesExternalIfoodPdvChanged;
-    const hasMerchantsChanged = changes.ifoodMerchantsChanged;
+      changes.usesExternalIfoodPdvChanged ||
+      changes.ifoodMerchantsChanged;
 
-    if (!hasRelevantChange && !hasMerchantsChanged) {
+    if (!hasRelevantChange) {
       return;
     }
 
@@ -307,13 +311,26 @@ export class UserService {
     this.ifoodImportService
       .retryPendingImportsForCompany(company.id)
       .then(() =>
+        this.ifoodImportService.syncExistingIfoodDeliveriesToAwaitingRelease(
+          company.id,
+        ),
+      )
+      .then(() =>
         this.logger.log(
-          `ifood_initial_sync_triggered companyId=${company.id} merchants=${this.getActiveMerchantIds(company).map((merchantId) => this.maskMerchantId(merchantId)).join(',')}`,
+          `ifood_initial_sync_triggered companyId=${company.id} merchants=${this.getActiveMerchantIds(
+            company,
+          )
+            .map((merchantId) => this.maskMerchantId(merchantId))
+            .join(',')}`,
         ),
       )
       .catch((error) =>
         this.logger.error(
-          `ifood_initial_sync_failed companyId=${company.id} merchants=${this.getActiveMerchantIds(company).map((merchantId) => this.maskMerchantId(merchantId)).join(',')} error=${error?.message || error}`,
+          `ifood_initial_sync_failed companyId=${company.id} merchants=${this.getActiveMerchantIds(
+            company,
+          )
+            .map((merchantId) => this.maskMerchantId(merchantId))
+            .join(',')} error=${error?.message || error}`,
         ),
       );
   }
@@ -335,20 +352,26 @@ export class UserService {
         merchantId: String(merchant?.merchantId || '').trim(),
         name: String(merchant?.name || '').trim(),
         enabled: merchant?.enabled !== false,
-        pickupAddress: String(merchant?.pickupAddress || '').trim() || undefined,
+        pickupAddress:
+          String(merchant?.pickupAddress || '').trim() || undefined,
       }))
       .filter((merchant) => merchant.merchantId);
   }
 
   private getActiveMerchantIds(company: UserEntity): string[] {
-    const fromList = this.normalizeIfoodMerchants(company.ifoodMerchants)
-      .filter((merchant) => merchant.enabled)
-      .map((merchant) => merchant.merchantId);
-    if (fromList.length) {
-      return fromList;
-    }
+    const merchantIds = new Set<string>();
     const legacy = String(company.ifoodMerchantId || '').trim();
-    return legacy ? [legacy] : [];
+
+    if (legacy) {
+      merchantIds.add(legacy);
+    }
+
+    this.normalizeIfoodMerchants(company.ifoodMerchants)
+      .filter((merchant) => merchant.enabled)
+      .map((merchant) => merchant.merchantId)
+      .forEach((merchantId) => merchantIds.add(merchantId));
+
+    return [...merchantIds];
   }
 
   private ensureCityAccess(requester: UserEntity, resourceCityId: string) {
@@ -631,7 +654,6 @@ export class UserService {
       throw error;
     }
   }
-
 
   async unblockUser(id: string, requestUser: UserRequest) {
     const requester = await this.findUserOrFail(requestUser.id);

@@ -172,11 +172,11 @@ export class IfoodAdminController {
       );
     }
 
-      const deliveryDto =
-        await this.ifoodOrdersService.buildCreateDeliveryDto(orderId);
+    const deliveryDto =
+      await this.ifoodOrdersService.buildCreateDeliveryDto(orderId);
 
-      const createdDelivery = await this.deliveryService.createDelivery(
-        deliveryDto,
+    const createdDelivery = await this.deliveryService.createDelivery(
+      deliveryDto,
       {
         id: targetShopkeeperId,
         phone: '',
@@ -225,7 +225,9 @@ export class IfoodAdminController {
       );
     }
 
-    return this.ifoodCreditsService.getCreditSummaryForIntegratedCompanies(user);
+    return this.ifoodCreditsService.getCreditSummaryForIntegratedCompanies(
+      user,
+    );
   }
 
   @Get('credits/company/:companyId')
@@ -320,20 +322,48 @@ export class IfoodAdminController {
     }
 
     if (!company.useIfoodIntegration || !company.isActive) {
-      throw new BadRequestException('A integração iFood não está ativa para esta loja.');
+      throw new BadRequestException(
+        'A integração iFood não está ativa para esta loja.',
+      );
     }
 
-    const merchantId = String(company.ifoodMerchantId || '').trim();
-    if (!merchantId) {
-      throw new BadRequestException('ifoodMerchantId não configurado para esta loja.');
+    const merchantIds = this.getActiveMerchantIds(company);
+    if (!merchantIds.length) {
+      throw new BadRequestException(
+        'Nenhum merchant iFood configurado para esta loja.',
+      );
     }
 
     await this.ifoodImportService.retryPendingImportsForCompany(companyId);
+    const existingOrdersSync =
+      await this.ifoodImportService.syncExistingIfoodDeliveriesToAwaitingRelease(
+        companyId,
+      );
 
     return {
       companyId,
-      merchantId,
+      merchantIds,
+      existingOrdersSync,
       message: 'Sincronização iFood iniciada para esta loja',
     };
+  }
+
+  private getActiveMerchantIds(company: UserEntity): string[] {
+    const merchantIds = new Set<string>();
+    const legacy = String(company.ifoodMerchantId || '').trim();
+
+    if (legacy) {
+      merchantIds.add(legacy);
+    }
+
+    if (Array.isArray(company.ifoodMerchants)) {
+      company.ifoodMerchants
+        .filter((merchant) => merchant?.enabled !== false)
+        .map((merchant) => String(merchant?.merchantId || '').trim())
+        .filter(Boolean)
+        .forEach((merchantId) => merchantIds.add(merchantId));
+    }
+
+    return [...merchantIds];
   }
 }

@@ -1,5 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { MongoRepository } from 'typeorm';
 import { DeliveryService } from '../delivery/delivery.service';
+import { DeliveryResult } from '../delivery/dto';
+import { DeliveryEntity, UserEntity } from '../database/entities';
+import { OrdersGateway } from '../gateway/orders.gateway';
+import { StatusDelivery } from '../shared/constants/enums.constants';
 import { IfoodEventService } from './ifood-event.service';
 import { IfoodOrderLinkService } from './ifood-order-link.service';
 import { IfoodOrdersService } from './ifood-orders.service';
@@ -19,6 +25,11 @@ export class IfoodImportService {
   ]);
 
   constructor(
+    @InjectRepository(UserEntity)
+    private readonly userRepository: MongoRepository<UserEntity>,
+    @InjectRepository(DeliveryEntity)
+    private readonly deliveryRepository: MongoRepository<DeliveryEntity>,
+    private readonly ordersGateway: OrdersGateway,
     private readonly deliveryService: DeliveryService,
     private readonly ifoodOrdersService: IfoodOrdersService,
     private readonly ifoodOrderLinkService: IfoodOrderLinkService,
@@ -222,6 +233,101 @@ export class IfoodImportService {
     );
 
     await this.importFromEvents(filteredEvents);
+  }
+
+  async syncExistingIfoodDeliveriesToAwaitingRelease(companyId: string) {
+    const company = await this.userRepository.findOneBy({ id: companyId });
+    const merchantIds = company ? this.getActiveMerchantIds(company) : [];
+
+    if (!company || !company.useIfoodIntegration || !company.isActive) {
+      this.logger.log(
+        `ifood_existing_orders_sync companyId=${companyId} merchants=${merchantIds.join(',') || 'n/a'} found=0 migrated=0 skipped=integration_inactive`,
+      );
+      return { found: 0, migrated: 0, merchantIds };
+    }
+
+    const linkedDeliveryIds = await this.getLinkedDeliveryIds(
+      companyId,
+      merchantIds,
+    );
+    const ifoodConditions: any[] = [
+      { ifoodOrderId: { $type: 'string', $ne: '' } },
+      { ifoodMerchantId: { $in: merchantIds } },
+    ];
+
+    if (linkedDeliveryIds.length) {
+      ifoodConditions.push({ id: { $in: linkedDeliveryIds } });
+    }
+
+    const where: any = {
+      'establishment.id': companyId,
+      isActive: true,
+      status: StatusDelivery.PENDING,
+      $or: ifoodConditions,
+      $and: [
+        {
+          $or: [{ motoboy: null }, { motoboy: { $exists: false } }],
+        },
+      ],
+    };
+
+    const deliveries = await this.deliveryRepository.find({ where });
+    const now = new Date();
+    let migrated = 0;
+
+    for (const delivery of deliveries) {
+      const updatedDelivery = await this.deliveryRepository.save({
+        ...delivery,
+        status: StatusDelivery.AWAITING_RELEASE,
+        updatedAt: now,
+      });
+      migrated += 1;
+      this.ordersGateway.emitDeliveryUpdated(
+        DeliveryResult.fromEntity({
+          ...updatedDelivery,
+          isIfoodOrder: true,
+        } as any),
+        updatedDelivery.establishment?.cityId,
+      );
+    }
+
+    this.logger.log(
+      `ifood_existing_orders_sync companyId=${companyId} merchants=${merchantIds.join(',') || 'n/a'} found=${deliveries.length} migrated=${migrated}`,
+    );
+
+    return { found: deliveries.length, migrated, merchantIds };
+  }
+
+  private async getLinkedDeliveryIds(companyId: string, merchantIds: string[]) {
+    const links =
+      await this.ifoodOrderLinkService.findByShopkeeperId(companyId);
+    return links
+      .filter(
+        (link) =>
+          !merchantIds.length ||
+          merchantIds.includes(String(link.merchantId || '').trim()),
+      )
+      .map((link) => link.deliveryId)
+      .filter(Boolean);
+  }
+
+  private getActiveMerchantIds(company: UserEntity): string[] {
+    const merchantIds = new Set<string>();
+    const legacy = String(company.ifoodMerchantId || '').trim();
+
+    if (legacy) {
+      merchantIds.add(legacy);
+    }
+
+    if (Array.isArray(company.ifoodMerchants)) {
+      company.ifoodMerchants
+        .filter((merchant) => merchant?.enabled !== false)
+        .map((merchant) => String(merchant?.merchantId || '').trim())
+        .filter(Boolean)
+        .forEach((merchantId) => merchantIds.add(merchantId));
+    }
+
+    return [...merchantIds];
   }
 
   async retryPendingImportsForActiveMerchants(limit = 300) {
