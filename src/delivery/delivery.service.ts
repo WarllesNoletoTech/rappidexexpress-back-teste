@@ -2028,6 +2028,32 @@ export class DeliveryService implements OnModuleInit {
     console.log('=== FIM NOTIFICAÇÃO DE NOVO PEDIDO (MOTOBOYS/ADMINS) ===');
   }
 
+  private parseReportDateFilter(dateValue: string, endOfDay = false): Date {
+    const onlyDate = /^\d{4}-\d{2}-\d{2}$/.test(dateValue);
+
+    if (onlyDate) {
+      const [year, month, day] = dateValue.split('-').map(Number);
+
+      return new Date(
+        year,
+        month - 1,
+        day,
+        endOfDay ? 23 : 0,
+        endOfDay ? 59 : 0,
+        endOfDay ? 59 : 0,
+        endOfDay ? 999 : 0,
+      );
+    }
+
+    const parsedDate = new Date(dateValue);
+
+    if (Number.isNaN(parsedDate.getTime())) {
+      throw new BadRequestException('Data inválida no filtro de relatório.');
+    }
+
+    return parsedDate;
+  }
+
   private buildDeliveriesWhere(
     userForRequest: UserEntity,
     queryParams: ListDeliveriesQueryDTO,
@@ -2102,13 +2128,21 @@ export class DeliveryService implements OnModuleInit {
       const stringFilter: Record<string, string> = {};
 
       if (queryParams.createdIn) {
-        dateFilter.$gte = new Date(queryParams.createdIn);
-        stringFilter.$gte = queryParams.createdIn;
+        const createdInDate = this.parseReportDateFilter(
+          queryParams.createdIn,
+          false,
+        );
+        dateFilter.$gte = createdInDate;
+        stringFilter.$gte = createdInDate.toISOString();
       }
 
       if (queryParams.createdUntil) {
-        dateFilter.$lte = new Date(queryParams.createdUntil);
-        stringFilter.$lte = queryParams.createdUntil;
+        const createdUntilDate = this.parseReportDateFilter(
+          queryParams.createdUntil,
+          true,
+        );
+        dateFilter.$lte = createdUntilDate;
+        stringFilter.$lte = createdUntilDate.toISOString();
       }
 
       // Garante compatibilidade: aceita registros Date (novos) e string (legados).
