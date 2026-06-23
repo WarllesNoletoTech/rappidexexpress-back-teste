@@ -1,7 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { DeliveryService } from './delivery.service';
-import { DeliveryEntity, LogEntity, UserEntity } from '../database/entities';
+import {
+  CityEntity,
+  DeliveryEntity,
+  LogEntity,
+  UserEntity,
+} from '../database/entities';
 import { OrdersGateway } from '../gateway/orders.gateway';
 import { IfoodOrdersService } from '../ifood/ifood-orders.service';
 import { IfoodOrderLinkService } from '../ifood/ifood-order-link.service';
@@ -53,6 +58,12 @@ describe('DeliveryService', () => {
           useValue: {
             find: jest.fn(),
             save: jest.fn(),
+          },
+        },
+        {
+          provide: getRepositoryToken(CityEntity),
+          useValue: {
+            findOne: jest.fn(),
           },
         },
         {

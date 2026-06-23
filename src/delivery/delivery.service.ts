@@ -9,9 +9,15 @@ import {
   OnModuleInit,
   UnauthorizedException,
 } from '@nestjs/common';
-import { DeliveryEntity, LogEntity, UserEntity } from '../database/entities';
+import {
+  CityEntity,
+  DeliveryEntity,
+  LogEntity,
+  UserEntity,
+} from '../database/entities';
 import { InjectRepository } from '@nestjs/typeorm';
 import { MongoRepository } from 'typeorm';
+import { ObjectId } from 'mongodb';
 import { v4 as uuid } from 'uuid';
 import { addHours } from 'date-fns';
 
@@ -49,6 +55,8 @@ export class DeliveryService implements OnModuleInit {
     private readonly deliveryRepository: MongoRepository<DeliveryEntity>,
     @InjectRepository(LogEntity)
     private readonly logRepository: MongoRepository<LogEntity>,
+    @InjectRepository(CityEntity)
+    private readonly cityRepository: MongoRepository<CityEntity>,
     private readonly ordersGateway: OrdersGateway,
     @Inject(forwardRef(() => IfoodOrdersService))
     private readonly ifoodOrdersService: IfoodOrdersService,
@@ -694,7 +702,7 @@ export class DeliveryService implements OnModuleInit {
     );
 
     const dashboardCountsPromise = shouldIncludeDashboardCounts
-      ? this.getDashboardCountsByUser(userForRequest)
+      ? this.getDashboardCountsByUser(userForRequest, queryParams)
       : Promise.resolve(undefined);
 
     const hasDateFilter = Boolean(
@@ -772,36 +780,74 @@ export class DeliveryService implements OnModuleInit {
     );
   }
 
-  async getDashboardCounts(user: UserRequest) {
+  async getDashboardCounts(
+    user: UserRequest,
+    queryParams: ListDeliveriesQueryDTO = {} as ListDeliveriesQueryDTO,
+  ) {
     const userForRequest = await this.findOneUserById(user.id);
 
-    return this.getDashboardCountsByUser(userForRequest);
+    return this.getDashboardCountsByUser(userForRequest, queryParams);
   }
 
-  private async getDashboardCountsByUser(userForRequest: UserEntity) {
+  private async getDashboardCountsByUser(
+    userForRequest: UserEntity,
+    queryParams: ListDeliveriesQueryDTO = {} as ListDeliveriesQueryDTO,
+  ) {
+    const countQueryParams = this.applyDashboardCityFilter(
+      userForRequest,
+      queryParams,
+    );
+
     const pendingWhere = this.buildDeliveriesWhere(userForRequest, {
+      ...countQueryParams,
       status: StatusDelivery.PENDING,
     } as ListDeliveriesQueryDTO);
 
-    const assignedWhere = this.buildAssignedDeliveriesWhere(userForRequest);
+    const assignedWhere = this.buildAssignedDeliveriesWhere(
+      userForRequest,
+      countQueryParams,
+    );
 
     const waitingReleaseWhere = this.buildDeliveriesWhere(userForRequest, {
+      ...countQueryParams,
       status: StatusDelivery.AWAITING_RELEASE,
     } as ListDeliveriesQueryDTO);
-    const [pending, assigned, waitingRelease] = await Promise.all([
-      this.deliveryRepository.count(pendingWhere),
-      this.deliveryRepository.count(assignedWhere),
-      this.deliveryRepository.count(waitingReleaseWhere),
-    ]);
+
+    const adminFinancialWhere = this.buildDeliveriesWhere(userForRequest, {
+      ...countQueryParams,
+      status: StatusDelivery.FINISHED,
+    } as ListDeliveriesQueryDTO);
+
+    const [pending, assigned, waitingRelease, adminDeliveries, city] =
+      await Promise.all([
+        this.deliveryRepository.count(pendingWhere),
+        this.deliveryRepository.count(assignedWhere),
+        this.deliveryRepository.count(waitingReleaseWhere),
+        this.findDashboardDeliveries(adminFinancialWhere, countQueryParams),
+        countQueryParams.cityId
+          ? this.findCityEntityById(countQueryParams.cityId)
+          : Promise.resolve(null),
+      ]);
+
+    const totalEntregas = adminDeliveries.length;
+    const valorAdminPorEntrega = this.getAdminDeliveryFeeValue(city);
 
     return {
       pending,
       assigned,
       waitingRelease,
+      totalEntregas,
+      valorAdminPorEntrega,
+      totalValorAdmin: totalEntregas * valorAdminPorEntrega,
+      cityId: city?.id?.toHexString?.() ?? countQueryParams.cityId ?? null,
+      cityName: city?.name ?? null,
     };
   }
 
-  private buildAssignedDeliveriesWhere(userForRequest: UserEntity) {
+  private buildAssignedDeliveriesWhere(
+    userForRequest: UserEntity,
+    queryParams: ListDeliveriesQueryDTO = {} as ListDeliveriesQueryDTO,
+  ) {
     const where: Record<string, any> = {
       isActive: true,
       motoboy: { $ne: null },
@@ -810,11 +856,7 @@ export class DeliveryService implements OnModuleInit {
       },
     };
 
-    if (userForRequest.type !== UserType.SUPERADMIN) {
-      where['establishment.cityId'] = userForRequest.cityId;
-    } else if (userForRequest.cityId) {
-      where['establishment.cityId'] = userForRequest.cityId;
-    }
+    this.applyCityWhere(userForRequest, where, queryParams.cityId);
 
     if (userForRequest.type === UserType.MOTOBOY) {
       where['motoboy.id'] = userForRequest.id;
@@ -828,6 +870,67 @@ export class DeliveryService implements OnModuleInit {
     }
 
     return where;
+  }
+
+  private applyDashboardCityFilter(
+    userForRequest: UserEntity,
+    queryParams: ListDeliveriesQueryDTO,
+  ): ListDeliveriesQueryDTO {
+    const cityId =
+      userForRequest.type === UserType.SUPERADMIN
+        ? queryParams.cityId || userForRequest.cityId || undefined
+        : userForRequest.cityId || undefined;
+
+    return { ...queryParams, cityId };
+  }
+
+  private applyCityWhere(
+    userForRequest: UserEntity,
+    where: Record<string, any>,
+    selectedCityId?: string,
+  ) {
+    if (userForRequest.type !== UserType.SUPERADMIN) {
+      where['establishment.cityId'] = userForRequest.cityId;
+      return;
+    }
+
+    const cityId = selectedCityId || userForRequest.cityId;
+    if (cityId) {
+      where['establishment.cityId'] = cityId;
+    }
+  }
+
+  private async findDashboardDeliveries(
+    where: Record<string, any>,
+    queryParams: ListDeliveriesQueryDTO,
+  ) {
+    const deliveries = await this.deliveryRepository.find({
+      relations: { motoboy: true, establishment: true },
+      where,
+    });
+
+    if (!queryParams.createdIn && !queryParams.createdUntil) {
+      return deliveries;
+    }
+
+    return deliveries.filter((delivery) =>
+      this.isDeliveryInsideReportDateFilter(delivery, queryParams),
+    );
+  }
+
+  private async findCityEntityById(cityId: string) {
+    if (!cityId || !ObjectId.isValid(cityId)) {
+      return null;
+    }
+
+    return this.cityRepository.findOne({
+      where: { _id: new ObjectId(cityId) },
+    });
+  }
+
+  private getAdminDeliveryFeeValue(city: CityEntity | null) {
+    const value = Number(city?.deliveryFeeValue);
+    return Number.isFinite(value) ? value : 0;
   }
 
   private parseBooleanQuery(value?: boolean | string) {
@@ -2200,11 +2303,7 @@ export class DeliveryService implements OnModuleInit {
       isActive: includeCanceled ? { $in: [true, false] } : true,
     };
 
-    if (userForRequest.type !== UserType.SUPERADMIN) {
-      where['establishment.cityId'] = userForRequest.cityId;
-    } else if (userForRequest.cityId) {
-      where['establishment.cityId'] = userForRequest.cityId;
-    }
+    this.applyCityWhere(userForRequest, where, queryParams.cityId);
 
     if (
       userForRequest.type === UserType.ADMIN ||

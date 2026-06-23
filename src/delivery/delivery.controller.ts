@@ -90,7 +90,11 @@ export class DeliveryController {
     @User() user: UserRequest,
     @Body() data: ReleaseDeliveryDto,
   ) {
-    return await this.deliveryService.releaseDelivery(param.deliveryId, user, data);
+    return await this.deliveryService.releaseDelivery(
+      param.deliveryId,
+      user,
+      data,
+    );
   }
 
   @Get()
@@ -121,8 +125,11 @@ export class DeliveryController {
     description: 'Dashboard delivery counters.',
   })
   @UseGuards(JwtAuthGuard)
-  async getDashboardCounts(@User() user: UserRequest) {
-    return await this.deliveryService.getDashboardCounts(user);
+  async getDashboardCounts(
+    @User() user: UserRequest,
+    @Query() queryParams: ListDeliveriesQueryDTO,
+  ) {
+    return await this.deliveryService.getDashboardCounts(user, queryParams);
   }
 
   @Delete(':deliveryId')
@@ -146,7 +153,6 @@ export class DeliveryController {
     }
     return await this.deliveryService.deleteDelivery(param.deliveryId, user);
   }
-
 
   @Post('cleanup/ifood-stale')
   @UseGuards(JwtAuthGuard)
@@ -210,6 +216,9 @@ export class DeliveryController {
     @Param() param: DeliveryParamsDto,
     @User() user: UserRequest,
   ) {
-    return await this.deliveryService.markArrivedAtStore(param.deliveryId, user);
+    return await this.deliveryService.markArrivedAtStore(
+      param.deliveryId,
+      user,
+    );
   }
 }
