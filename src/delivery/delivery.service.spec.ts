@@ -7,13 +7,19 @@ import { IfoodOrdersService } from '../ifood/ifood-orders.service';
 import { IfoodOrderLinkService } from '../ifood/ifood-order-link.service';
 import { IfoodCreditsService } from '../ifood/ifood-credits.service';
 import { IfoodEventService } from '../ifood/ifood-event.service';
-import { StatusDelivery } from '../shared/constants/enums.constants';
+import {
+  Permissions,
+  StatusDelivery,
+  UserType,
+} from '../shared/constants/enums.constants';
 
 describe('DeliveryService', () => {
   let service: DeliveryService;
   let ifoodOrdersService: any;
   let ifoodOrderLinkService: any;
   let ifoodEventService: any;
+  let userRepository: any;
+  let deliveryRepository: any;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -23,6 +29,8 @@ describe('DeliveryService', () => {
           provide: getRepositoryToken(UserEntity),
           useValue: {
             findOneBy: jest.fn(),
+            findOneOrFail: jest.fn(),
+            findOneByOrFail: jest.fn(),
             find: jest.fn(),
             save: jest.fn(),
           },
@@ -31,9 +39,12 @@ describe('DeliveryService', () => {
           provide: getRepositoryToken(DeliveryEntity),
           useValue: {
             findOneBy: jest.fn(),
+            findOneOrFail: jest.fn(),
+            findOneByOrFail: jest.fn(),
             find: jest.fn(),
             save: jest.fn(),
             deleteOne: jest.fn(),
+            updateOne: jest.fn(),
             count: jest.fn(),
           },
         },
@@ -48,6 +59,8 @@ describe('DeliveryService', () => {
           provide: OrdersGateway,
           useValue: {
             emit: jest.fn(),
+            emitDeliveryUpdated: jest.fn(),
+            emitDeliveryDeleted: jest.fn(),
           },
         },
         {
@@ -93,6 +106,8 @@ describe('DeliveryService', () => {
     ifoodOrdersService = module.get(IfoodOrdersService);
     ifoodOrderLinkService = module.get(IfoodOrderLinkService);
     ifoodEventService = module.get(IfoodEventService);
+    userRepository = module.get(getRepositoryToken(UserEntity));
+    deliveryRepository = module.get(getRepositoryToken(DeliveryEntity));
   });
 
   it('should be defined', () => {
@@ -391,5 +406,96 @@ describe('DeliveryService', () => {
         queryParams,
       ),
     ).toBe(false);
+  });
+
+  it('permite lojista atualizar status quando o pedido ainda não tem motoboy atribuído', () => {
+    expect(() =>
+      (service as any).validateStoreCanUpdateDeliveryStatus(
+        { type: UserType.SHOPKEEPER },
+        { status: StatusDelivery.PENDING, motoboy: null },
+      ),
+    ).not.toThrow();
+  });
+
+  it('bloqueia lojista ao atualizar status de pedido já atribuído a motoboy', () => {
+    expect(() =>
+      (service as any).validateStoreCanUpdateDeliveryStatus(
+        { type: UserType.SHOPKEEPER },
+        { status: StatusDelivery.ONCOURSE, motoboy: { id: 'motoboy-1' } },
+      ),
+    ).toThrow(
+      'Este pedido já foi atribuído a um motoboy. Apenas administradores podem alterar o status.',
+    );
+  });
+
+  it('bloqueia lojista ao cancelar pedido já atribuído a motoboy', () => {
+    expect(() =>
+      (service as any).ensureShopkeeperCanCancelDelivery(
+        { type: UserType.SHOPKEEPERADMIN },
+        { status: StatusDelivery.PENDING, motoboyId: 'motoboy-1' },
+      ),
+    ).toThrow(
+      'Este pedido já foi atribuído a um motoboy. Apenas administradores podem alterar o status.',
+    );
+  });
+
+  it('permite admin, super admin e master alterar status de pedido atribuído', () => {
+    const delivery = {
+      status: StatusDelivery.COLLECTED,
+      motoboy: { id: 'motoboy-1' },
+    };
+
+    expect(() =>
+      (service as any).validateStoreCanUpdateDeliveryStatus(
+        { type: UserType.ADMIN },
+        delivery,
+      ),
+    ).not.toThrow();
+    expect(() =>
+      (service as any).validateStoreCanUpdateDeliveryStatus(
+        { type: UserType.SUPERADMIN },
+        delivery,
+      ),
+    ).not.toThrow();
+    expect(() =>
+      (service as any).validateStoreCanUpdateDeliveryStatus(
+        { type: UserType.SHOPKEEPER, permission: Permissions.MASTER },
+        delivery,
+      ),
+    ).not.toThrow();
+  });
+
+  it('permite motoboy atualizar status no fluxo normal dele', async () => {
+    const motoboy = {
+      id: 'motoboy-1',
+      type: UserType.MOTOBOY,
+      cityId: 'city-1',
+    };
+    const delivery = {
+      id: 'delivery-1',
+      status: StatusDelivery.ONCOURSE,
+      motoboy,
+      establishment: { id: 'shop-1', cityId: 'city-1' },
+      isActive: true,
+    };
+
+    userRepository.findOneBy.mockResolvedValue(motoboy);
+    deliveryRepository.findOneOrFail.mockResolvedValue(delivery);
+    deliveryRepository.save.mockImplementation(async (data) => data);
+    deliveryRepository.updateOne.mockResolvedValue({ matchedCount: 1 });
+    deliveryRepository.findOneByOrFail
+      .mockResolvedValueOnce(delivery)
+      .mockResolvedValueOnce({ ...delivery, status: StatusDelivery.COLLECTED });
+    ifoodOrderLinkService.findByDeliveryId.mockResolvedValue(null);
+
+    await expect(
+      service.updateDelivery(
+        'delivery-1',
+        { status: StatusDelivery.COLLECTED } as any,
+        { id: 'motoboy-1', type: UserType.MOTOBOY } as any,
+      ),
+    ).resolves.toEqual(
+      expect.objectContaining({ status: StatusDelivery.COLLECTED }),
+    );
   });
 });

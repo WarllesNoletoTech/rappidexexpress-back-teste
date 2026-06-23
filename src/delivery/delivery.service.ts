@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   forwardRef,
+  ForbiddenException,
   Inject,
   Injectable,
   InternalServerErrorException,
@@ -24,7 +25,11 @@ import {
   ReleaseDeliveryDto,
 } from './dto';
 import { UserRequest } from '../shared/interfaces';
-import { StatusDelivery, UserType } from '../shared/constants/enums.constants';
+import {
+  Permissions,
+  StatusDelivery,
+  UserType,
+} from '../shared/constants/enums.constants';
 import { IfoodOrderLinkService } from '../ifood/ifood-order-link.service';
 import { IfoodOrdersService } from '../ifood/ifood-orders.service';
 import { IfoodCreditsService } from '../ifood/ifood-credits.service';
@@ -56,14 +61,31 @@ export class DeliveryService implements OnModuleInit {
   ) {}
 
   private isAdminOrSuperAdmin(user: UserEntity | UserRequest) {
-    return user.type === UserType.ADMIN || user.type === UserType.SUPERADMIN;
+    const type = String(user?.type || '').toLowerCase();
+    const permission = String(
+      (user as UserEntity)?.permission || '',
+    ).toLowerCase();
+
+    return (
+      type === UserType.ADMIN ||
+      type === UserType.SUPERADMIN ||
+      type === Permissions.MASTER ||
+      permission === Permissions.MASTER
+    );
   }
 
   private isShopkeeperUser(user: UserEntity | UserRequest) {
-    return (
-      user.type === UserType.SHOPKEEPER ||
-      user.type === UserType.SHOPKEEPERADMIN
-    );
+    const shopkeeperTypes = [
+      UserType.SHOPKEEPER,
+      UserType.SHOPKEEPERADMIN,
+      'establishment',
+      'store',
+      'company',
+      'lojista',
+    ];
+    const type = String(user?.type || '').toLowerCase();
+
+    return shopkeeperTypes.includes(type as UserType);
   }
 
   private isDeliveryAssigned(delivery: DeliveryEntity) {
@@ -75,14 +97,20 @@ export class DeliveryService implements OnModuleInit {
       StatusDelivery.AWAITING_CODE,
     ];
 
+    const deliveryData = delivery as any;
+
     return Boolean(
-      delivery?.motoboy?.id ||
-      delivery?.motoboy ||
+      deliveryData?.motoboy?.id ||
+      deliveryData?.motoboyId ||
+      deliveryData?.deliveryManId ||
+      deliveryData?.assignedTo ||
+      deliveryData?.courierId ||
+      (deliveryData?.motoboy && Object.keys(deliveryData.motoboy).length > 0) ||
       assignedStatuses.includes(delivery?.status),
     );
   }
 
-  private ensureShopkeeperCanCancelDelivery(
+  private validateStoreCanUpdateDeliveryStatus(
     user: UserEntity | UserRequest,
     delivery: DeliveryEntity,
   ) {
@@ -91,10 +119,17 @@ export class DeliveryService implements OnModuleInit {
     }
 
     if (this.isShopkeeperUser(user) && this.isDeliveryAssigned(delivery)) {
-      throw new BadRequestException(
-        'O lojista não pode cancelar um pedido depois que ele foi atribuído a um motoboy. Solicite o cancelamento a um admin.',
+      throw new ForbiddenException(
+        'Este pedido já foi atribuído a um motoboy. Apenas administradores podem alterar o status.',
       );
     }
+  }
+
+  private ensureShopkeeperCanCancelDelivery(
+    user: UserEntity | UserRequest,
+    delivery: DeliveryEntity,
+  ) {
+    this.validateStoreCanUpdateDeliveryStatus(user, delivery);
   }
 
   private async syncIfoodOnCourseIfNeeded(
@@ -836,8 +871,8 @@ export class DeliveryService implements OnModuleInit {
 
     const isShopkeeperUser = this.isShopkeeperUser(userFinded);
 
-    if (deliveryData.status === StatusDelivery.CANCELED) {
-      this.ensureShopkeeperCanCancelDelivery(userFinded, deliveryFinded);
+    if (deliveryData.status) {
+      this.validateStoreCanUpdateDeliveryStatus(userFinded, deliveryFinded);
     }
 
     if (isAdminUser || isShopkeeperUser) {
