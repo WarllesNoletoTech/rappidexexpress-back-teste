@@ -658,19 +658,56 @@ export class DeliveryService implements OnModuleInit {
       queryParams.includeDashboardCounts,
     );
 
-    const [deliveries, count, dashboardCounts] = await Promise.all([
-      this.deliveryRepository.find({
-        relations: { motoboy: true, establishment: true },
-        where,
-        skip,
-        take,
-        order: { createdAt: 'ASC' },
-      }),
-      this.deliveryRepository.count(where),
-      shouldIncludeDashboardCounts
-        ? this.getDashboardCountsByUser(userForRequest)
-        : Promise.resolve(undefined),
-    ]);
+    const dashboardCountsPromise = shouldIncludeDashboardCounts
+      ? this.getDashboardCountsByUser(userForRequest)
+      : Promise.resolve(undefined);
+
+    const hasDateFilter = Boolean(
+      queryParams.createdIn || queryParams.createdUntil,
+    );
+
+    let deliveries: DeliveryEntity[];
+    let count: number;
+    let itemsPerPage: number;
+    let dashboardCounts;
+
+    if (hasDateFilter) {
+      const [allDeliveries, resolvedDashboardCounts] = await Promise.all([
+        this.deliveryRepository.find({
+          relations: { motoboy: true, establishment: true },
+          where,
+          order: { createdAt: 'ASC' },
+        }),
+        dashboardCountsPromise,
+      ]);
+
+      const filteredDeliveries = allDeliveries.filter((delivery) =>
+        this.isDeliveryInsideReportDateFilter(delivery, queryParams),
+      );
+
+      deliveries = filteredDeliveries.slice(skip, skip + take);
+      count = filteredDeliveries.length;
+      itemsPerPage = take;
+      dashboardCounts = resolvedDashboardCounts;
+    } else {
+      const [pagedDeliveries, totalDeliveries, resolvedDashboardCounts] =
+        await Promise.all([
+          this.deliveryRepository.find({
+            relations: { motoboy: true, establishment: true },
+            where,
+            skip,
+            take,
+            order: { createdAt: 'ASC' },
+          }),
+          this.deliveryRepository.count(where),
+          dashboardCountsPromise,
+        ]);
+
+      deliveries = pagedDeliveries;
+      count = totalDeliveries;
+      itemsPerPage = deliveries.length;
+      dashboardCounts = resolvedDashboardCounts;
+    }
 
     const ifoodLinks = await this.ifoodOrderLinkService.findByDeliveryIds(
       deliveries.map((delivery) => delivery.id),
@@ -693,7 +730,7 @@ export class DeliveryService implements OnModuleInit {
 
     return ListDeliverysResult.fromEntities(
       deliveriesWithSource as any,
-      deliveries.length,
+      itemsPerPage,
       queryParams.page,
       count,
       dashboardCounts,
@@ -2054,6 +2091,68 @@ export class DeliveryService implements OnModuleInit {
     return parsedDate;
   }
 
+  private normalizeReportDateToYmd(
+    value?: Date | string | null,
+  ): string | null {
+    if (!value) return null;
+
+    if (value instanceof Date) {
+      return value.toISOString().slice(0, 10);
+    }
+
+    const textValue = String(value).trim();
+
+    const isoDateMatch = textValue.match(/^\d{4}-\d{2}-\d{2}/);
+    if (isoDateMatch) {
+      return isoDateMatch[0];
+    }
+
+    const parsedDate = new Date(textValue);
+    if (Number.isNaN(parsedDate.getTime())) {
+      return null;
+    }
+
+    return parsedDate.toISOString().slice(0, 10);
+  }
+
+  private isDeliveryInsideReportDateFilter(
+    delivery: DeliveryEntity,
+    queryParams: ListDeliveriesQueryDTO,
+  ): boolean {
+    const selectedStatuses = queryParams.status
+      ? queryParams.status.split(',')
+      : [];
+
+    const shouldUseFinishedAt =
+      selectedStatuses.length > 0 &&
+      selectedStatuses.every((status) => status === StatusDelivery.FINISHED);
+
+    const dateValue = shouldUseFinishedAt
+      ? delivery.finishedAt || delivery.updatedAt || delivery.createdAt
+      : delivery.createdAt;
+
+    const deliveryDate = this.normalizeReportDateToYmd(dateValue);
+
+    if (!deliveryDate) return false;
+
+    const startDate = this.normalizeReportDateToYmd(
+      queryParams.createdIn || null,
+    );
+    const endDate = this.normalizeReportDateToYmd(
+      queryParams.createdUntil || queryParams.createdIn || null,
+    );
+
+    if (startDate && deliveryDate < startDate) {
+      return false;
+    }
+
+    if (endDate && deliveryDate > endDate) {
+      return false;
+    }
+
+    return true;
+  }
+
   private buildDeliveriesWhere(
     userForRequest: UserEntity,
     queryParams: ListDeliveriesQueryDTO,
@@ -2118,39 +2217,7 @@ export class DeliveryService implements OnModuleInit {
     //   where['isActive'] = queryParams.isActive ? true : false;
     // }
 
-    if (queryParams.createdIn || queryParams.createdUntil) {
-      const dateField =
-        selectedStatuses.length > 0 &&
-        selectedStatuses.every((status) => status === StatusDelivery.FINISHED)
-          ? 'finishedAt'
-          : 'createdAt';
-      const dateFilter: Record<string, Date> = {};
-      const stringFilter: Record<string, string> = {};
-
-      if (queryParams.createdIn) {
-        const createdInDate = this.parseReportDateFilter(
-          queryParams.createdIn,
-          false,
-        );
-        dateFilter.$gte = createdInDate;
-        stringFilter.$gte = createdInDate.toISOString();
-      }
-
-      if (queryParams.createdUntil) {
-        const createdUntilDate = this.parseReportDateFilter(
-          queryParams.createdUntil,
-          true,
-        );
-        dateFilter.$lte = createdUntilDate;
-        stringFilter.$lte = createdUntilDate.toISOString();
-      }
-
-      // Garante compatibilidade: aceita registros Date (novos) e string (legados).
-      where['$or'] = [
-        { [dateField]: dateFilter },
-        { [dateField]: stringFilter },
-      ];
-    }
+    // O filtro de data dos relatórios é aplicado em memória no listDeliveries.
 
     return where;
   }

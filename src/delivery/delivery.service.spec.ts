@@ -34,6 +34,7 @@ describe('DeliveryService', () => {
             find: jest.fn(),
             save: jest.fn(),
             deleteOne: jest.fn(),
+            count: jest.fn(),
           },
         },
         {
@@ -60,13 +61,16 @@ describe('DeliveryService', () => {
             notifyArrivedAtDestination: jest.fn(),
             verifyDeliveryCode: jest.fn().mockResolvedValue({ success: true }),
             requestCancellation: jest.fn(),
-            getOrderDetails: jest.fn().mockResolvedValue({ orderStatus: 'CON' }),
+            getOrderDetails: jest
+              .fn()
+              .mockResolvedValue({ orderStatus: 'CON' }),
           },
         },
         {
           provide: IfoodOrderLinkService,
           useValue: {
             findByDeliveryId: jest.fn(),
+            findByDeliveryIds: jest.fn().mockResolvedValue([]),
           },
         },
         {
@@ -232,7 +236,9 @@ describe('DeliveryService', () => {
       { status: StatusDelivery.FINISHED, deliveryCode: '1234' },
     );
 
-    expect(ifoodOrdersService.notifyArrivedAtDestination).not.toHaveBeenCalled();
+    expect(
+      ifoodOrdersService.notifyArrivedAtDestination,
+    ).not.toHaveBeenCalled();
     expect(ifoodOrdersService.verifyDeliveryCode).toHaveBeenCalledWith(
       'ifood-3',
       '1234',
@@ -286,7 +292,6 @@ describe('DeliveryService', () => {
       ),
     ).resolves.toEqual({});
   });
-
 
   it('deve finalizar localmente sem DELIVERY_DROP_CODE_REQUESTED quando iFood já estiver concluído', async () => {
     ifoodOrderLinkService.findByDeliveryId.mockResolvedValue({
@@ -342,45 +347,49 @@ describe('DeliveryService', () => {
     );
   });
 
-  it('filtra entregas finalizadas por finishedAt com limites inclusivos', () => {
+  it('não aplica filtro de data diretamente no where do MongoDB', () => {
     const where = (service as any).buildDeliveriesWhere(
       { type: 'superadmin' },
       {
         status: StatusDelivery.FINISHED,
-        createdIn: '2026-06-02T00:00:00.000Z',
-        createdUntil: '2026-06-08T23:59:59.999Z',
+        createdIn: '2026-06-23',
+        createdUntil: '2026-06-23',
       },
     );
 
-    expect(where.$or).toEqual([
-      {
-        finishedAt: {
-          $gte: new Date('2026-06-02T00:00:00.000Z'),
-          $lte: new Date('2026-06-08T23:59:59.999Z'),
-        },
-      },
-      {
-        finishedAt: {
-          $gte: '2026-06-02T00:00:00.000Z',
-          $lte: '2026-06-08T23:59:59.999Z',
-        },
-      },
-    ]);
+    expect(where.$or).toBeUndefined();
+    expect(where.finishedAt).toBeUndefined();
+    expect(where.createdAt).toBeUndefined();
+    expect(where.status).toEqual({ $in: [StatusDelivery.FINISHED] });
   });
 
-  it('aplica isoladamente o limite inicial inclusivo do relatório', () => {
-    const where = (service as any).buildDeliveriesWhere(
-      { type: 'superadmin' },
-      {
-        status: StatusDelivery.FINISHED,
-        createdIn: '2026-06-02T00:00:00.000Z',
-      },
-    );
+  it('filtra entregas finalizadas em memória pelo dia de finishedAt', () => {
+    const queryParams = {
+      status: StatusDelivery.FINISHED,
+      createdIn: '2026-06-23',
+      createdUntil: '2026-06-23',
+    };
 
-    expect(where.$or).toEqual([
-      { finishedAt: { $gte: new Date('2026-06-02T00:00:00.000Z') } },
-      { finishedAt: { $gte: '2026-06-02T00:00:00.000Z' } },
-    ]);
+    expect(
+      (service as any).isDeliveryInsideReportDateFilter(
+        {
+          status: StatusDelivery.FINISHED,
+          createdAt: new Date('2026-06-22T23:30:00.000Z'),
+          finishedAt: new Date('2026-06-23T00:39:00.000Z'),
+        },
+        queryParams,
+      ),
+    ).toBe(true);
+
+    expect(
+      (service as any).isDeliveryInsideReportDateFilter(
+        {
+          status: StatusDelivery.FINISHED,
+          createdAt: new Date('2026-06-23T10:00:00.000Z'),
+          finishedAt: new Date('2026-06-24T00:39:00.000Z'),
+        },
+        queryParams,
+      ),
+    ).toBe(false);
   });
-
 });
