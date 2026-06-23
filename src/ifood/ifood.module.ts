@@ -5,7 +5,6 @@ import {
   IfoodCreditHistoryEntity,
   IfoodEventEntity,
   IfoodOrderLinkEntity,
-  DeliveryEntity,
   UserEntity,
 } from '../database/entities';
 import { DeliveryModule } from '../delivery/delivery.module';
@@ -31,7 +30,6 @@ import { IfoodHttpService } from './ifood-http.service';
       IfoodOrderLinkEntity,
       IfoodEventEntity,
       IfoodCreditHistoryEntity,
-      DeliveryEntity,
       UserEntity,
     ]),
   ],
