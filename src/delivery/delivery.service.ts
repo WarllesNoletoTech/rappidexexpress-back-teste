@@ -55,6 +55,48 @@ export class DeliveryService implements OnModuleInit {
     private readonly ifoodEventService: IfoodEventService,
   ) {}
 
+  private isAdminOrSuperAdmin(user: UserEntity | UserRequest) {
+    return user.type === UserType.ADMIN || user.type === UserType.SUPERADMIN;
+  }
+
+  private isShopkeeperUser(user: UserEntity | UserRequest) {
+    return (
+      user.type === UserType.SHOPKEEPER ||
+      user.type === UserType.SHOPKEEPERADMIN
+    );
+  }
+
+  private isDeliveryAssigned(delivery: DeliveryEntity) {
+    const assignedStatuses: StatusDelivery[] = [
+      StatusDelivery.ONCOURSE,
+      StatusDelivery.ARRIVED_AT_STORE,
+      StatusDelivery.COLLECTED,
+      StatusDelivery.ARRIVED_AT_DESTINATION,
+      StatusDelivery.AWAITING_CODE,
+    ];
+
+    return Boolean(
+      delivery?.motoboy?.id ||
+      delivery?.motoboy ||
+      assignedStatuses.includes(delivery?.status),
+    );
+  }
+
+  private ensureShopkeeperCanCancelDelivery(
+    user: UserEntity | UserRequest,
+    delivery: DeliveryEntity,
+  ) {
+    if (this.isAdminOrSuperAdmin(user)) {
+      return;
+    }
+
+    if (this.isShopkeeperUser(user) && this.isDeliveryAssigned(delivery)) {
+      throw new BadRequestException(
+        'O lojista não pode cancelar um pedido depois que ele foi atribuído a um motoboy. Solicite o cancelamento a um admin.',
+      );
+    }
+  }
+
   private async syncIfoodOnCourseIfNeeded(
     previousDelivery: DeliveryEntity,
     nextDelivery: DeliveryEntity,
@@ -736,8 +778,9 @@ export class DeliveryService implements OnModuleInit {
   ) {
     const [userFinded, deliveryFinded] = await Promise.all([
       this.findOneUserById(user.id),
-      this.deliveryRepository.findOneByOrFail({
-        id: deliveryId,
+      this.deliveryRepository.findOneOrFail({
+        where: { id: deliveryId },
+        relations: { motoboy: true, establishment: true },
       }),
     ]);
 
@@ -752,13 +795,13 @@ export class DeliveryService implements OnModuleInit {
 
     let changedDelivery: Record<string, any> = {};
 
-    const isAdminUser =
-      userFinded.type === UserType.ADMIN ||
-      userFinded.type === UserType.SUPERADMIN;
+    const isAdminUser = this.isAdminOrSuperAdmin(userFinded);
 
-    const isShopkeeperUser =
-      userFinded.type === UserType.SHOPKEEPER ||
-      userFinded.type === UserType.SHOPKEEPERADMIN;
+    const isShopkeeperUser = this.isShopkeeperUser(userFinded);
+
+    if (deliveryData.status === StatusDelivery.CANCELED) {
+      this.ensureShopkeeperCanCancelDelivery(userFinded, deliveryFinded);
+    }
 
     if (isAdminUser || isShopkeeperUser) {
       changedDelivery = { ...deliveryFinded, ...deliveryData };
@@ -1331,7 +1374,7 @@ export class DeliveryService implements OnModuleInit {
         id: deliveryId,
         isActive: true,
       },
-      relations: { establishment: true },
+      relations: { establishment: true, motoboy: true },
     });
 
     if (!deliveryFinded) {
@@ -1349,6 +1392,8 @@ export class DeliveryService implements OnModuleInit {
     ) {
       throw new BadRequestException('Você não é o dono dessa entrega.');
     }
+
+    this.ensureShopkeeperCanCancelDelivery(userFinded, deliveryFinded);
 
     const ifoodLink = await this.ifoodOrderLinkService.findByDeliveryId(
       deliveryFinded.id,
