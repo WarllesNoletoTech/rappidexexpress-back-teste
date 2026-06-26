@@ -534,6 +534,8 @@ export class IfoodOrdersService {
     const establishmentId = await this.resolveTargetShopkeeperId(
       order?.merchant?.id,
     );
+    const shouldSkipPreparationTime =
+      await this.shouldSendIfoodOrderDirectlyToPending(establishmentId);
 
     const customerName = order?.customer?.name ?? 'Cliente iFood';
     const customerPhone = this.normalizePhone(
@@ -588,13 +590,37 @@ export class IfoodOrdersService {
       addressLatitude: fullAddressData.addressLatitude ?? undefined,
       addressLongitude: fullAddressData.addressLongitude ?? undefined,
       addressMapsUrl: fullAddressData.addressMapsUrl ?? undefined,
-      status: StatusDelivery.AWAITING_RELEASE,
+      status: shouldSkipPreparationTime
+        ? StatusDelivery.PENDING
+        : StatusDelivery.AWAITING_RELEASE,
       establishmentId,
       value: String(totalValue),
       payment: this.resolvePaymentType(order),
       soda: 'NÃO',
       observation,
     };
+  }
+
+  private async shouldSendIfoodOrderDirectlyToPending(
+    shopkeeperId?: string | null,
+  ): Promise<boolean> {
+    const normalizedShopkeeperId = String(shopkeeperId || '').trim();
+
+    if (!normalizedShopkeeperId) {
+      return false;
+    }
+
+    const shopkeeper = await this.userRepository.findOne({
+      where: {
+        id: normalizedShopkeeperId,
+        isActive: true,
+      } as any,
+    });
+
+    return Boolean(
+      shopkeeper?.useIfoodIntegration &&
+        shopkeeper?.ifoodWithoutPreparationTime,
+    );
   }
 
   private buildIfoodFullAddress(order: any) {

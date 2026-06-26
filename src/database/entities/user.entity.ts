@@ -88,6 +88,9 @@ export class UserEntity {
   @Column({ default: false })
   usesExternalIfoodPdv: boolean;
 
+  @Column({ default: false })
+  ifoodWithoutPreparationTime: boolean;
+
   @Column({ nullable: true })
   ifoodMerchantId?: string;
 

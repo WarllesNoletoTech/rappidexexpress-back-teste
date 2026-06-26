@@ -74,6 +74,9 @@ export class UserService {
     const usesExternalIfoodPdv = useIfoodIntegration
       ? Boolean(data.usesExternalIfoodPdv)
       : false;
+    const ifoodWithoutPreparationTime = useIfoodIntegration
+      ? Boolean(data.ifoodWithoutPreparationTime)
+      : false;
     const ifoodMerchants = this.normalizeIfoodMerchants(data.ifoodMerchants);
     const ifoodMerchantId = useIfoodIntegration
       ? (data.ifoodMerchantId?.trim() ?? ifoodMerchants[0]?.merchantId ?? '')
@@ -88,6 +91,7 @@ export class UserService {
         password: passHash,
         useIfoodIntegration,
         usesExternalIfoodPdv,
+        ifoodWithoutPreparationTime,
         ifoodMerchantId,
         ifoodMerchants,
         ifoodClientId: '',
@@ -106,6 +110,7 @@ export class UserService {
         ifoodMerchantsChanged: true,
         isActiveChanged: true,
         usesExternalIfoodPdvChanged: true,
+        ifoodWithoutPreparationTimeChanged: true,
       });
 
       return UserResult.fromEntity(newUser);
@@ -207,6 +212,13 @@ export class UserService {
       const usesExternalIfoodPdv = useIfoodIntegration
         ? (data.usesExternalIfoodPdv ?? userToUpdate.usesExternalIfoodPdv ?? false)
         : false;
+      const ifoodWithoutPreparationTime = useIfoodIntegration
+        ? (
+            data.ifoodWithoutPreparationTime ??
+            userToUpdate.ifoodWithoutPreparationTime ??
+            false
+          )
+        : false;
 
       const ifoodMerchantId = useIfoodIntegration
         ? (
@@ -232,6 +244,7 @@ export class UserService {
         phone,
         useIfoodIntegration,
         usesExternalIfoodPdv,
+        ifoodWithoutPreparationTime,
         ifoodMerchantId,
         ifoodMerchants,
         ifoodClientId: '',
@@ -257,6 +270,9 @@ export class UserService {
           Boolean(changedUser.isActive) !== Boolean(userToUpdate.isActive),
         usesExternalIfoodPdvChanged:
           usesExternalIfoodPdv !== Boolean(userToUpdate.usesExternalIfoodPdv),
+        ifoodWithoutPreparationTimeChanged:
+          ifoodWithoutPreparationTime !==
+          Boolean(userToUpdate.ifoodWithoutPreparationTime),
       });
 
       return UserResult.fromEntity(changedUser);
@@ -282,6 +298,7 @@ export class UserService {
       ifoodMerchantIdChanged: boolean;
       isActiveChanged: boolean;
       usesExternalIfoodPdvChanged: boolean;
+      ifoodWithoutPreparationTimeChanged: boolean;
       ifoodMerchantsChanged: boolean;
     },
   ) {
@@ -289,7 +306,8 @@ export class UserService {
       changes.useIfoodIntegrationChanged ||
       changes.ifoodMerchantIdChanged ||
       changes.isActiveChanged ||
-      changes.usesExternalIfoodPdvChanged;
+      changes.usesExternalIfoodPdvChanged ||
+      changes.ifoodWithoutPreparationTimeChanged;
     const hasMerchantsChanged = changes.ifoodMerchantsChanged;
 
     if (!hasRelevantChange && !hasMerchantsChanged) {

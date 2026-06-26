@@ -64,6 +64,9 @@ export class UserResult {
   usesExternalIfoodPdv: boolean;
 
   @Expose()
+  ifoodWithoutPreparationTime: boolean;
+
+  @Expose()
   ifoodMerchantId?: string;
   @Expose()
   ifoodMerchants?: Array<{
@@ -89,6 +92,7 @@ export class UserResult {
     return plainToClass<UserResult, UserResult>(UserResult, {
       ...user,
       usesExternalIfoodPdv: Boolean(user?.usesExternalIfoodPdv),
+      ifoodWithoutPreparationTime: Boolean(user?.ifoodWithoutPreparationTime),
       blocked: Boolean(user?.blocked),
       blockedBySystem: Boolean(user?.blockedBySystem),
     } as UserResult, {
