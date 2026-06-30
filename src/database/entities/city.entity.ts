@@ -22,6 +22,9 @@ export class CityEntity {
   deliveryFeeValue?: number;
 
   @Column({ nullable: true })
+  monthlyFeeValue?: number;
+
+  @Column({ nullable: true })
   pixKey?: string;
 
   @Column({ nullable: true })

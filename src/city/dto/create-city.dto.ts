@@ -21,6 +21,10 @@ export class CreateCityDto {
   @IsOptional()
   deliveryFeeValue?: number;
 
+  @IsNumber()
+  @IsOptional()
+  monthlyFeeValue?: number;
+
   @IsString()
   @IsOptional()
   pixKey?: string;

@@ -35,7 +35,10 @@ type SettlementData = {
   generatedAt: Date;
   deliveries: SettlementDelivery[];
   deliveryFeeValue: number;
+  monthlyFeeValue: number;
+  includeMonthlyFee: boolean;
   pixKey: string;
+  totalDeliveries: number;
   total: number;
   whatsapp: string;
   filename: string;
@@ -91,6 +94,8 @@ export class FinancialSettlementService {
       deliveriesCount: settlement.deliveries.length,
       deliveryFeeValue: settlement.deliveryFeeValue,
       total: settlement.total,
+      includeMonthlyFee: settlement.includeMonthlyFee,
+      monthlyFeeValue: settlement.monthlyFeeValue,
       pixKey: settlement.pixKey,
       whatsappPhone: settlement.whatsapp,
       filename: settlement.filename,
@@ -172,7 +177,14 @@ export class FinancialSettlementService {
       );
     }
 
-    const total = deliveries.length * deliveryFeeValue;
+    const includeMonthlyFee = this.shouldIncludeMonthlyFee(
+      query.includeMonthlyFee,
+    );
+    const monthlyFeeValue = includeMonthlyFee
+      ? this.getMonthlyFeeValue(city)
+      : 0;
+    const totalDeliveries = deliveries.length * deliveryFeeValue;
+    const total = totalDeliveries + monthlyFeeValue;
     const establishmentName = this.resolveEstablishmentName(
       establishment,
       deliveries[0],
@@ -198,7 +210,10 @@ export class FinancialSettlementService {
       generatedAt: new Date(),
       deliveries: settlementDeliveries,
       deliveryFeeValue,
+      monthlyFeeValue,
+      includeMonthlyFee,
       pixKey,
+      totalDeliveries,
       total,
       whatsapp,
       filename,
@@ -255,8 +270,21 @@ export class FinancialSettlementService {
     return Number.isFinite(deliveryFeeValue) ? deliveryFeeValue : 0;
   }
 
+  private getMonthlyFeeValue(city: CityEntity) {
+    const monthlyFeeValue = Number(city.monthlyFeeValue);
+    return Number.isFinite(monthlyFeeValue) ? monthlyFeeValue : 0;
+  }
+
+  private shouldIncludeMonthlyFee(value?: string) {
+    return String(value ?? '').toLowerCase() === 'true';
+  }
+
   private buildWhatsappMessage(settlement: SettlementData) {
-    return `Olá, ${settlement.establishmentName}!\n\nSegue o fechamento das entregas realizadas pela Rappidex Express.\n\nCidade: ${this.formatCity(settlement.city)}\nPeríodo: ${this.formatDate(settlement.periodStart)} até ${this.formatDate(settlement.periodEnd)}\nQuantidade de entregas: ${settlement.deliveries.length}\nValor por entrega: ${this.formatCurrency(settlement.deliveryFeeValue)}\nTotal a pagar: ${this.formatCurrency(settlement.total)}\n\nChave PIX para pagamento:\n${settlement.pixKey}\n\nO relatório em PDF foi gerado. Anexarei o arquivo nesta conversa.\n\nObrigado pela parceria!\nRappidex Express`;
+    const monthlyFeeLine = settlement.includeMonthlyFee
+      ? `\nMensalidade: ${this.formatCurrency(settlement.monthlyFeeValue)}`
+      : '';
+
+    return `Olá, ${settlement.establishmentName}!\n\nSegue o fechamento das entregas realizadas pela Rappidex Express.\n\nCidade: ${this.formatCity(settlement.city)}\nPeríodo: ${this.formatDate(settlement.periodStart)} até ${this.formatDate(settlement.periodEnd)}\nQuantidade de entregas: ${settlement.deliveries.length}\nValor por entrega: ${this.formatCurrency(settlement.deliveryFeeValue)}\nTotal das entregas: ${this.formatCurrency(settlement.totalDeliveries)}${monthlyFeeLine}\nTotal a pagar: ${this.formatCurrency(settlement.total)}\n\nChave PIX para pagamento:\n${settlement.pixKey}\n\nO relatório em PDF foi gerado. Anexarei o arquivo nesta conversa.\n\nObrigado pela parceria!\nRappidex Express`;
   }
 
   private createPdfBuffer(settlement: SettlementData) {
@@ -427,12 +455,25 @@ export class FinancialSettlementService {
         690,
       );
 
-      const cards = [
-        ['Entregas finalizadas', String(settlement.deliveries.length)],
-        ['Valor por entrega', this.formatCurrency(settlement.deliveryFeeValue)],
-        ['Total a pagar', this.formatCurrency(settlement.total)],
-        ['Chave PIX', settlement.pixKey],
-      ];
+      const cards = settlement.includeMonthlyFee
+        ? [
+            ['Entregas finalizadas', String(settlement.deliveries.length)],
+            [
+              'Valor por entrega',
+              this.formatCurrency(settlement.deliveryFeeValue),
+            ],
+            ['Total entregas', this.formatCurrency(settlement.totalDeliveries)],
+            ['Mensalidade', this.formatCurrency(settlement.monthlyFeeValue)],
+          ]
+        : [
+            ['Entregas finalizadas', String(settlement.deliveries.length)],
+            [
+              'Valor por entrega',
+              this.formatCurrency(settlement.deliveryFeeValue),
+            ],
+            ['Total a pagar', this.formatCurrency(settlement.total)],
+            ['Chave PIX', settlement.pixKey],
+          ];
       cards.forEach(([label, value], index) => {
         const x = 35 + index * 132;
         rect(x, 570, 125, 58, index === 2 ? yellow : lightGray);
@@ -448,9 +489,31 @@ export class FinancialSettlementService {
         );
       });
 
-      rect(35, 535, 525, 20, dark);
-      text('Lista de entregas', 48, 542, 11, 'F2', '1 1 1');
-      tableY = 506;
+      if (settlement.includeMonthlyFee) {
+        rect(35, 535, 525, 20, '1 1 1');
+        strokeRect(35, 535, 525, 20);
+        text(
+          `Mensalidade: ${this.formatCurrency(settlement.monthlyFeeValue)}`,
+          48,
+          542,
+          10,
+          'F2',
+          dark,
+        );
+        text(
+          `Total Final: ${this.formatCurrency(settlement.total)}`,
+          360,
+          542,
+          10,
+          'F2',
+          dark,
+        );
+      }
+
+      const listHeaderY = settlement.includeMonthlyFee ? 505 : 535;
+      rect(35, listHeaderY, 525, 20, dark);
+      text('Lista de entregas', 48, listHeaderY + 7, 11, 'F2', '1 1 1');
+      tableY = settlement.includeMonthlyFee ? 476 : 506;
     } else {
       text('Lista de entregas (continuação)', 40, 744, 12, 'F2', dark);
       tableY = 716;

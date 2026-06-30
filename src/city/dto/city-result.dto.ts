@@ -21,6 +21,9 @@ export class CityResult {
   deliveryFeeValue?: number;
 
   @Expose()
+  monthlyFeeValue?: number;
+
+  @Expose()
   pixKey?: string;
 
   @Expose()
@@ -40,10 +43,13 @@ export class CityResult {
       clientWhatsappMessage: city.clientWhatsappMessage,
       deliveryValue: city.deliveryValue,
       deliveryFeeValue: city.deliveryFeeValue,
+      monthlyFeeValue: city.monthlyFeeValue,
       pixKey: city.pixKey,
       adminWhatsapp: city.adminWhatsapp,
       whatsappPhoneNumberId: city.whatsappPhoneNumberId,
-      whatsappCloudTokenConfigured: Boolean(String(city.whatsappCloudToken ?? '').trim()),
+      whatsappCloudTokenConfigured: Boolean(
+        String(city.whatsappCloudToken ?? '').trim(),
+      ),
     });
   }
 }

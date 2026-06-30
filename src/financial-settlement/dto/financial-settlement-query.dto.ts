@@ -13,4 +13,8 @@ export class FinancialSettlementQueryDto {
   @IsString()
   @IsOptional()
   status?: string;
+
+  @IsString()
+  @IsOptional()
+  includeMonthlyFee?: string;
 }

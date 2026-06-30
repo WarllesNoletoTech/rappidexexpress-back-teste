@@ -13,9 +13,7 @@ export class CityService {
     private readonly cityRepository: MongoRepository<CityEntity>,
   ) {}
 
-  private normalizeDeliveryFeeValue(
-    value?: number | string,
-  ): number | undefined {
+  private normalizeCurrencyValue(value?: number | string): number | undefined {
     if (value === undefined || value === null || value === '') {
       return undefined;
     }
@@ -41,7 +39,8 @@ export class CityService {
       state: data.state,
       clientWhatsappMessage: data.clientWhatsappMessage?.trim() || '',
       deliveryValue: data.deliveryValue?.trim() || '',
-      deliveryFeeValue: this.normalizeDeliveryFeeValue(data.deliveryFeeValue),
+      deliveryFeeValue: this.normalizeCurrencyValue(data.deliveryFeeValue),
+      monthlyFeeValue: this.normalizeCurrencyValue(data.monthlyFeeValue),
       pixKey: data.pixKey?.trim() || '',
       adminWhatsapp: data.adminWhatsapp?.trim() || '',
       whatsappPhoneNumberId: data.whatsappPhoneNumberId?.trim() || '',
@@ -85,8 +84,12 @@ export class CityService {
           : city.deliveryValue,
       deliveryFeeValue:
         data.deliveryFeeValue !== undefined
-          ? this.normalizeDeliveryFeeValue(data.deliveryFeeValue)
+          ? this.normalizeCurrencyValue(data.deliveryFeeValue)
           : city.deliveryFeeValue,
+      monthlyFeeValue:
+        data.monthlyFeeValue !== undefined
+          ? this.normalizeCurrencyValue(data.monthlyFeeValue)
+          : city.monthlyFeeValue,
       pixKey: data.pixKey !== undefined ? data.pixKey.trim() : city.pixKey,
       adminWhatsapp:
         data.adminWhatsapp !== undefined

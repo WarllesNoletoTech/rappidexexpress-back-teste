@@ -33,6 +33,12 @@ export class FinancialSettlementHistoryEntity {
   @Column()
   total: number;
 
+  @Column({ nullable: true })
+  includeMonthlyFee?: boolean;
+
+  @Column({ nullable: true })
+  monthlyFeeValue?: number;
+
   @Column()
   pixKey: string;
 
