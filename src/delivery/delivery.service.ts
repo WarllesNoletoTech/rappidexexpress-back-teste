@@ -43,6 +43,13 @@ import { IfoodEventService } from '../ifood/ifood-event.service';
 import { sendNotificationsFor } from 'src/shared/utils/notification.functions';
 import { OrdersGateway } from '../gateway/orders.gateway';
 
+type DashboardDateRange = {
+  createdIn: string;
+  createdUntil: string;
+  start: Date;
+  end: Date;
+};
+
 @Injectable()
 export class DeliveryService implements OnModuleInit {
   private readonly logger = new Logger(DeliveryService.name);
@@ -813,51 +820,202 @@ export class DeliveryService implements OnModuleInit {
       userForRequest,
       queryParams,
     );
+    const dateRange = this.resolveDashboardDateRange(countQueryParams);
+
+    this.logger.log(
+      `delivery_counts userId=${userForRequest.id} userType=${userForRequest.type} cityId=${
+        countQueryParams.cityId || 'N/A'
+      } createdIn=${dateRange.createdIn} createdUntil=${dateRange.createdUntil}`,
+    );
+
+    if (
+      userForRequest.type === UserType.SUPERADMIN &&
+      !countQueryParams.cityId
+    ) {
+      return {
+        pending: 0,
+        assigned: 0,
+        waitingRelease: 0,
+        totalEntregas: 0,
+        valorAdminPorEntrega: 0,
+        totalValorAdmin: 0,
+        cityId: null,
+        cityName: null,
+        createdIn: dateRange.createdIn,
+        createdUntil: dateRange.createdUntil,
+        weekStartsOn: 'TUESDAY',
+        weekEndsOn: 'MONDAY',
+      };
+    }
 
     const pendingWhere = this.buildDeliveriesWhere(userForRequest, {
       ...countQueryParams,
       status: StatusDelivery.PENDING,
     } as ListDeliveriesQueryDTO);
+    Object.assign(
+      pendingWhere,
+      this.buildDashboardDateWhere(StatusDelivery.PENDING, dateRange),
+    );
 
     const assignedWhere = this.buildAssignedDeliveriesWhere(
       userForRequest,
       countQueryParams,
+    );
+    Object.assign(
+      assignedWhere,
+      this.buildDashboardDateWhere(StatusDelivery.ONCOURSE, dateRange),
     );
 
     const waitingReleaseWhere = this.buildDeliveriesWhere(userForRequest, {
       ...countQueryParams,
       status: StatusDelivery.AWAITING_RELEASE,
     } as ListDeliveriesQueryDTO);
+    Object.assign(
+      waitingReleaseWhere,
+      this.buildDashboardDateWhere(StatusDelivery.AWAITING_RELEASE, dateRange),
+    );
 
     const adminFinancialWhere = this.buildDeliveriesWhere(userForRequest, {
       ...countQueryParams,
       status: StatusDelivery.FINISHED,
     } as ListDeliveriesQueryDTO);
+    Object.assign(
+      adminFinancialWhere,
+      this.buildDashboardDateWhere(StatusDelivery.FINISHED, dateRange),
+    );
 
-    const [pending, assigned, waitingRelease, adminDeliveries, city] =
-      await Promise.all([
-        this.deliveryRepository.count(pendingWhere),
-        this.deliveryRepository.count(assignedWhere),
-        this.deliveryRepository.count(waitingReleaseWhere),
-        this.findDashboardDeliveries(adminFinancialWhere, countQueryParams),
-        countQueryParams.cityId
-          ? this.findCityEntityById(countQueryParams.cityId)
-          : Promise.resolve(null),
-      ]);
+    try {
+      const [pending, assigned, waitingRelease, totalEntregas, city] =
+        await Promise.all([
+          this.deliveryRepository.count(pendingWhere),
+          this.deliveryRepository.count(assignedWhere),
+          this.deliveryRepository.count(waitingReleaseWhere),
+          this.deliveryRepository.count(adminFinancialWhere),
+          countQueryParams.cityId
+            ? this.findCityEntityById(countQueryParams.cityId)
+            : Promise.resolve(null),
+        ]);
 
-    const totalEntregas = adminDeliveries.length;
-    const valorAdminPorEntrega = this.getAdminDeliveryFeeValue(city);
+      const valorAdminPorEntrega = this.getAdminDeliveryFeeValue(city);
+
+      return {
+        pending,
+        assigned,
+        waitingRelease,
+        totalEntregas,
+        valorAdminPorEntrega,
+        totalValorAdmin: totalEntregas * valorAdminPorEntrega,
+        cityId: city?.id?.toHexString?.() ?? countQueryParams.cityId ?? null,
+        cityName: city?.name ?? null,
+        createdIn: dateRange.createdIn,
+        createdUntil: dateRange.createdUntil,
+        weekStartsOn: 'TUESDAY',
+        weekEndsOn: 'MONDAY',
+      };
+    } catch (error: any) {
+      this.logger.error(
+        `delivery_counts_error userId=${userForRequest.id} userType=${userForRequest.type} cityId=${
+          countQueryParams.cityId || 'N/A'
+        } createdIn=${dateRange.createdIn} createdUntil=${dateRange.createdUntil} message=${
+          error?.message || error
+        }`,
+        error?.stack,
+      );
+      throw new BadRequestException(
+        'Não foi possível carregar o contador de entregas.',
+      );
+    }
+  }
+
+  private resolveDashboardDateRange(
+    queryParams: ListDeliveriesQueryDTO = {} as ListDeliveriesQueryDTO,
+  ): DashboardDateRange {
+    const startYmd =
+      this.normalizeReportDateToYmd(queryParams.createdIn || null) ||
+      this.getCurrentRappidexWeekYmdRange().start;
+    const endYmd =
+      this.normalizeReportDateToYmd(
+        queryParams.createdUntil || queryParams.createdIn || null,
+      ) || this.getCurrentRappidexWeekYmdRange().end;
 
     return {
-      pending,
-      assigned,
-      waitingRelease,
-      totalEntregas,
-      valorAdminPorEntrega,
-      totalValorAdmin: totalEntregas * valorAdminPorEntrega,
-      cityId: city?.id?.toHexString?.() ?? countQueryParams.cityId ?? null,
-      cityName: city?.name ?? null,
+      createdIn: startYmd,
+      createdUntil: endYmd,
+      start: this.createDashboardDate(startYmd),
+      end: this.createDashboardDate(endYmd, true),
     };
+  }
+
+  private buildDashboardDateWhere(
+    status: StatusDelivery,
+    dateRange: DashboardDateRange,
+  ) {
+    if (status !== StatusDelivery.FINISHED) {
+      return { createdAt: { $gte: dateRange.start, $lte: dateRange.end } };
+    }
+
+    const missingFinishedAt = {
+      $or: [{ finishedAt: null }, { finishedAt: { $exists: false } }],
+    };
+    const missingUpdatedAt = {
+      $or: [{ updatedAt: null }, { updatedAt: { $exists: false } }],
+    };
+
+    return {
+      $or: [
+        { finishedAt: { $gte: dateRange.start, $lte: dateRange.end } },
+        {
+          $and: [
+            missingFinishedAt,
+            { updatedAt: { $gte: dateRange.start, $lte: dateRange.end } },
+          ],
+        },
+        {
+          $and: [
+            missingFinishedAt,
+            missingUpdatedAt,
+            { createdAt: { $gte: dateRange.start, $lte: dateRange.end } },
+          ],
+        },
+      ],
+    };
+  }
+
+  private getCurrentRappidexWeekYmdRange(referenceDate = new Date()) {
+    const date = new Date(referenceDate);
+    const weekStartDay = 2;
+    const diffToTuesday = (date.getDay() - weekStartDay + 7) % 7;
+    const start = new Date(date);
+    start.setDate(date.getDate() - diffToTuesday);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+
+    return {
+      start: this.formatDashboardDateToYmd(start),
+      end: this.formatDashboardDateToYmd(end),
+    };
+  }
+
+  private formatDashboardDateToYmd(date: Date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+
+    return `${year}-${month}-${day}`;
+  }
+
+  private createDashboardDate(dateString: string, endOfDay = false) {
+    const [year, month, day] = dateString.split('-').map(Number);
+
+    return new Date(
+      year,
+      month - 1,
+      day,
+      endOfDay ? 23 : 0,
+      endOfDay ? 59 : 0,
+      endOfDay ? 59 : 0,
+      endOfDay ? 999 : 0,
+    );
   }
 
   private buildAssignedDeliveriesWhere(
@@ -914,24 +1072,6 @@ export class DeliveryService implements OnModuleInit {
     if (cityId) {
       where['establishment.cityId'] = cityId;
     }
-  }
-
-  private async findDashboardDeliveries(
-    where: Record<string, any>,
-    queryParams: ListDeliveriesQueryDTO,
-  ) {
-    const deliveries = await this.deliveryRepository.find({
-      relations: { motoboy: true, establishment: true },
-      where,
-    });
-
-    if (!queryParams.createdIn && !queryParams.createdUntil) {
-      return deliveries;
-    }
-
-    return deliveries.filter((delivery) =>
-      this.isDeliveryInsideReportDateFilter(delivery, queryParams),
-    );
   }
 
   private async findCityEntityById(cityId: string) {

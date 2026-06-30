@@ -11,6 +11,7 @@ import {
   UnauthorizedException,
   UseGuards,
   Logger,
+  InternalServerErrorException,
 } from '@nestjs/common';
 import { DeliveryService } from './delivery.service';
 import { ApiOperation, ApiResponse } from '@nestjs/swagger';
@@ -140,7 +141,31 @@ export class DeliveryController {
     @User() user: UserRequest,
     @Query() queryParams: ListDeliveriesQueryDTO,
   ) {
-    return await this.deliveryService.getDashboardCounts(user, queryParams);
+    this.logger.log(
+      `GET /api/delivery/counts userId=${user?.id || 'N/A'} userType=${
+        user?.type || 'N/A'
+      } cityId=${queryParams?.cityId || 'N/A'} createdIn=${
+        queryParams?.createdIn || 'N/A'
+      } createdUntil=${queryParams?.createdUntil || 'N/A'}`,
+    );
+
+    try {
+      return await this.deliveryService.getDashboardCounts(user, queryParams);
+    } catch (error: any) {
+      this.logger.error(
+        `GET /api/delivery/counts falhou. userId=${user?.id || 'N/A'} userType=${
+          user?.type || 'N/A'
+        } cityId=${queryParams?.cityId || 'N/A'} createdIn=${
+          queryParams?.createdIn || 'N/A'
+        } createdUntil=${queryParams?.createdUntil || 'N/A'} message=${
+          error?.message || error
+        }`,
+        error?.stack,
+      );
+      throw new InternalServerErrorException(
+        'Não foi possível carregar o contador de entregas.',
+      );
+    }
   }
 
   @Delete(':deliveryId')
