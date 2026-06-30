@@ -273,7 +273,8 @@ export class IfoodAutoPollingService implements OnModuleInit, OnModuleDestroy {
     } catch (error: any) {
       this.captureHttpErrorMetrics(error);
       this.logger.error(
-        `Erro no polling automático do iFood: ${error?.message || error}`,
+        `Erro no polling automático/importação iFood. httpStatus=${error?.response?.status || error?.status || 'N/A'} mongoCode=${error?.code || 'N/A'} mongoCodeName=${error?.codeName || 'N/A'} keyPattern=${JSON.stringify(error?.keyPattern || {})} keyValue=${JSON.stringify(error?.keyValue || {})} message=${error?.response?.data?.message || error?.message || error}`,
+        error?.stack,
       );
     } finally {
       this.isPollingCycleRunning = false;

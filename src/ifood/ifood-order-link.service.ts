@@ -16,17 +16,27 @@ export class IfoodOrderLinkService implements OnModuleInit {
   }
 
   private async ensureIfoodOrderLinkIndexes() {
+    const indexName = 'IDX_IFOOD_ORDER_LINK_ORDER_MERCHANT_UNIQUE';
+
     try {
       await this.ifoodOrderLinkRepository.createCollectionIndex(
         { ifoodOrderId: 1, merchantId: 1 },
         {
-          name: 'IDX_IFOOD_ORDER_LINK_ORDER_MERCHANT_UNIQUE',
+          name: indexName,
           unique: true,
+          partialFilterExpression: {
+            ifoodOrderId: { $type: 'string' },
+            merchantId: { $type: 'string' },
+          },
         },
       );
+      this.logger.log(
+        `Índice MongoDB garantido em ifood_order_link: ${indexName}`,
+      );
     } catch (error: any) {
-      this.logger.warn(
-        `Não foi possível garantir índice único de vínculo iFood. ${error?.message || error}`,
+      this.logger.error(
+        `Falha ao garantir índice MongoDB em ifood_order_link: ${indexName}. keys={"ifoodOrderId":1,"merchantId":1} unique=true code=${error?.code || 'N/A'} codeName=${error?.codeName || 'N/A'} message=${error?.message || error}. Rode npm run diagnose:mongo no Heroku para localizar vínculos duplicados.`,
+        error?.stack,
       );
     }
   }

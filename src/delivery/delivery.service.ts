@@ -545,36 +545,52 @@ export class DeliveryService implements OnModuleInit {
   }
 
   private async ensureDeliveryIndexes() {
-    try {
-      await Promise.all([
-        this.deliveryRepository.createCollectionIndex(
-          { isActive: 1, 'establishment.cityId': 1, createdAt: -1 },
-          { name: 'IDX_DELIVERIES_ACTIVE_CITY_CREATED_AT' },
-        ),
-        this.deliveryRepository.createCollectionIndex(
-          { isActive: 1, status: 1, 'establishment.cityId': 1, createdAt: -1 },
-          { name: 'IDX_DELIVERIES_ACTIVE_STATUS_CITY_CREATED_AT' },
-        ),
-        this.deliveryRepository.createCollectionIndex(
-          { isActive: 1, 'motoboy.id': 1, status: 1, createdAt: -1 },
-          { name: 'IDX_DELIVERIES_ACTIVE_MOTOBOY_STATUS_CREATED_AT' },
-        ),
-        this.deliveryRepository.createCollectionIndex(
-          { ifoodOrderId: 1, ifoodMerchantId: 1 },
-          {
-            name: 'IDX_DELIVERIES_IFOOD_ORDER_MERCHANT_UNIQUE',
-            unique: true,
-            partialFilterExpression: {
-              ifoodOrderId: { $type: 'string' },
-              ifoodMerchantId: { $type: 'string' },
-            },
+    const indexes = [
+      {
+        keys: { isActive: 1, 'establishment.cityId': 1, createdAt: -1 },
+        options: { name: 'IDX_DELIVERIES_ACTIVE_CITY_CREATED_AT' },
+      },
+      {
+        keys: {
+          isActive: 1,
+          status: 1,
+          'establishment.cityId': 1,
+          createdAt: -1,
+        },
+        options: { name: 'IDX_DELIVERIES_ACTIVE_STATUS_CITY_CREATED_AT' },
+      },
+      {
+        keys: { isActive: 1, 'motoboy.id': 1, status: 1, createdAt: -1 },
+        options: { name: 'IDX_DELIVERIES_ACTIVE_MOTOBOY_STATUS_CREATED_AT' },
+      },
+      {
+        keys: { ifoodOrderId: 1, ifoodMerchantId: 1 },
+        options: {
+          name: 'IDX_DELIVERIES_IFOOD_ORDER_MERCHANT_UNIQUE',
+          unique: true,
+          partialFilterExpression: {
+            ifoodOrderId: { $type: 'string' },
+            ifoodMerchantId: { $type: 'string' },
           },
-        ),
-      ]);
-    } catch (error: any) {
-      this.logger.warn(
-        `Não foi possível garantir índices de performance de delivery. ${error?.message || error}`,
-      );
+        },
+      },
+    ];
+
+    for (const index of indexes) {
+      try {
+        await this.deliveryRepository.createCollectionIndex(
+          index.keys,
+          index.options,
+        );
+        this.logger.log(
+          `Índice MongoDB garantido em delivery: ${index.options.name}`,
+        );
+      } catch (error: any) {
+        this.logger.error(
+          `Falha ao garantir índice MongoDB em delivery: ${index.options.name}. keys=${JSON.stringify(index.keys)} unique=${Boolean((index.options as any).unique)} code=${error?.code || 'N/A'} codeName=${error?.codeName || 'N/A'} message=${error?.message || error}. Rode npm run diagnose:mongo no Heroku para localizar documentos duplicados/incompatíveis.`,
+          error?.stack,
+        );
+      }
     }
   }
 

@@ -10,6 +10,7 @@ import {
   Query,
   UnauthorizedException,
   UseGuards,
+  Logger,
 } from '@nestjs/common';
 import { DeliveryService } from './delivery.service';
 import { ApiOperation, ApiResponse } from '@nestjs/swagger';
@@ -35,6 +36,8 @@ import {
 
 @Controller('delivery')
 export class DeliveryController {
+  private readonly logger = new Logger(DeliveryController.name);
+
   constructor(private deliveryService: DeliveryService) {}
 
   @Post()
@@ -112,7 +115,15 @@ export class DeliveryController {
     @User() user: UserRequest,
     @Query() queryParams: ListDeliveriesQueryDTO,
   ) {
-    return await this.deliveryService.listDeliveries(user, queryParams);
+    try {
+      return await this.deliveryService.listDeliveries(user, queryParams);
+    } catch (error: any) {
+      this.logger.error(
+        `GET /api/delivery falhou. userId=${user?.id || 'N/A'} userType=${user?.type || 'N/A'} query=${JSON.stringify(queryParams || {})} message=${error?.message || error}`,
+        error?.stack,
+      );
+      throw error;
+    }
   }
 
   @Get('counts')

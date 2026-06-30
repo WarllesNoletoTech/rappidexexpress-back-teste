@@ -10,24 +10,24 @@ import { CitySeedService } from './seeds/city-seed.service';
   imports: [
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
-      useFactory: async (configService: ConfigService) => ({
-        type: 'mongodb',
-        url: configService.get<string>('MONGODB_URI'),
-        entities: [join(__dirname, '**/*.entity{.ts,.js}')],
-        useFactory: async (configService: ConfigService) => {
-          const isProduction = configService.get<string>('NODE_ENV') === 'production';
-
-          return {
-            type: 'mongodb',
-            url: configService.get<string>('MONGODB_URI'),
-            entities: [join(__dirname, '**/*.entity{.ts,.js}')],
-            synchronize: !isProduction && configService.get<string>('TYPEORM_SYNCHRONIZE') === 'true',
-            useNewUrlParser: true,
-            logging: !isProduction && configService.get<string>('TYPEORM_LOGGING') === 'true',
-          };
-        },
-      }),
       inject: [ConfigService],
+      useFactory: async (configService: ConfigService) => {
+        const isProduction =
+          configService.get<string>('NODE_ENV') === 'production';
+
+        return {
+          type: 'mongodb',
+          url: configService.get<string>('MONGODB_URI'),
+          entities: [join(__dirname, '**/*.entity{.ts,.js}')],
+          synchronize:
+            !isProduction &&
+            configService.get<string>('TYPEORM_SYNCHRONIZE') === 'true',
+          useNewUrlParser: true,
+          logging:
+            !isProduction &&
+            configService.get<string>('TYPEORM_LOGGING') === 'true',
+        };
+      },
     }),
     TypeOrmModule.forFeature([UserEntity, DeliveryEntity, CityEntity]),
   ],

@@ -10,6 +10,7 @@ import {
   Query,
   UnauthorizedException,
   UseGuards,
+  Logger,
 } from '@nestjs/common';
 import { ApiOperation, ApiResponse } from '@nestjs/swagger';
 
@@ -32,6 +33,8 @@ import {
 
 @Controller('user')
 export class UserController {
+  private readonly logger = new Logger(UserController.name);
+
   constructor(private userService: UserService) {}
 
   @Post()
@@ -69,7 +72,15 @@ export class UserController {
     @User() user: UserRequest,
     @Query() queryParams: ListUserQueryDTO,
   ) {
-    return await this.userService.listUsers(user.id, queryParams);
+    try {
+      return await this.userService.listUsers(user.id, queryParams);
+    } catch (error: any) {
+      this.logger.error(
+        `GET /api/user falhou. userId=${user?.id || 'N/A'} userType=${user?.type || 'N/A'} query=${JSON.stringify(queryParams || {})} message=${error?.message || error}`,
+        error?.stack,
+      );
+      throw error;
+    }
   }
 
   @Put(':user')
@@ -198,7 +209,6 @@ export class UserController {
     }
     return await this.userService.resetUserPassword(param.user, user);
   }
-
 
   @Patch(':user/unblock')
   @UseGuards(JwtAuthGuard)

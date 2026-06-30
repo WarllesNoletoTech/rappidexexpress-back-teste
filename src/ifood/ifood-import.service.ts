@@ -165,7 +165,8 @@ export class IfoodImportService {
         );
       } catch (error: any) {
         this.logger.error(
-          `iFood: erro ao buscar detalhes do pedido | merchantId=${merchantId ?? 'n/a'} orderId=${orderId} code=${eventReference?.code ?? ''} fullCode=${eventReference?.fullCode ?? ''} erro=${error?.message || error}`,
+          `iFood: erro na importação/persistência do pedido | merchantId=${merchantId ?? 'n/a'} orderId=${orderId} code=${eventReference?.code ?? ''} fullCode=${eventReference?.fullCode ?? ''} mongoCode=${error?.code || 'N/A'} mongoCodeName=${error?.codeName || 'N/A'} keyPattern=${JSON.stringify(error?.keyPattern || {})} keyValue=${JSON.stringify(error?.keyValue || {})} erro=${error?.message || error}`,
+          error?.stack,
         );
       } finally {
         this.importingOrderIds.delete(orderId);
