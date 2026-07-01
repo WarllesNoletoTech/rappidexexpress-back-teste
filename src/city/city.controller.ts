@@ -15,13 +15,9 @@ import { CityService } from './city.service';
 import { JwtAuthGuard } from '../authenticator/guards/jwt-auth.guard';
 import { User } from '../shared/decorators';
 import { UserRequest } from '../shared/interfaces';
+import { UserType } from '../shared/constants/enums.constants';
 import { onlyForSAdmin } from '../shared/utils/permissions.function';
-import {
-  CityParamsDto,
-  CityResult,
-  CreateCityDto,
-  UpdateCityDto,
-} from './dto';
+import { CityParamsDto, CityResult, CreateCityDto, UpdateCityDto } from './dto';
 
 @Controller('city')
 export class CityController {
@@ -39,8 +35,8 @@ export class CityController {
     isArray: true,
   })
   @UseGuards(JwtAuthGuard)
-  async listCities(): Promise<CityResult[]> {
-    return await this.cityService.listCities();
+  async listCities(@User() user: UserRequest): Promise<CityResult[]> {
+    return await this.cityService.listCities(user);
   }
 
   @Post()
@@ -78,8 +74,11 @@ export class CityController {
     type: CityResult,
   })
   @UseGuards(JwtAuthGuard)
-  async showCity(@Param() params: CityParamsDto): Promise<CityResult> {
-    return await this.cityService.findCity(params.cityId);
+  async showCity(
+    @Param() params: CityParamsDto,
+    @User() user: UserRequest,
+  ): Promise<CityResult> {
+    return await this.cityService.findCity(params.cityId, user);
   }
 
   @Put(':cityId')
@@ -98,13 +97,13 @@ export class CityController {
     @User() user: UserRequest,
     @Body() data: UpdateCityDto,
   ): Promise<CityResult> {
-    if (!onlyForSAdmin(user.type)) {
+    if (user.type !== UserType.SUPERADMIN && user.type !== UserType.ADMIN) {
       throw new UnauthorizedException(
         'Você não tem permissão para esse recurso.',
       );
     }
 
-    return await this.cityService.updateCity(params.cityId, data);
+    return await this.cityService.updateCity(params.cityId, data, user);
   }
 
   @Delete(':cityId')

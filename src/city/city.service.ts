@@ -1,9 +1,15 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ObjectId } from 'mongodb';
 import { MongoRepository } from 'typeorm';
 
 import { CityEntity } from '../database/entities/city.entity';
+import { UserType } from '../shared/constants/enums.constants';
+import { UserRequest } from '../shared/interfaces';
 import { CityResult, CreateCityDto, UpdateCityDto } from './dto';
 
 @Injectable()
@@ -26,7 +32,41 @@ export class CityService {
     return Number.isFinite(parsed) ? parsed : undefined;
   }
 
-  async listCities(): Promise<CityResult[]> {
+  private ensureAdminCityAccess(cityId: string, user: UserRequest): void {
+    if (user.type === UserType.SUPERADMIN) {
+      return;
+    }
+
+    if (
+      user.type !== UserType.ADMIN ||
+      !user.cityId ||
+      user.cityId !== cityId
+    ) {
+      throw new UnauthorizedException(
+        'Você não tem permissão para acessar esta cidade.',
+      );
+    }
+  }
+
+  async listCities(user: UserRequest): Promise<CityResult[]> {
+    if (user.type === UserType.ADMIN) {
+      if (!user.cityId) {
+        return [];
+      }
+
+      const city = await this.cityRepository.findOne({
+        where: { _id: new ObjectId(user.cityId) },
+      });
+
+      return city ? [CityResult.fromEntity(city)] : [];
+    }
+
+    if (user.type !== UserType.SUPERADMIN) {
+      throw new UnauthorizedException(
+        'Você não tem permissão para esse recurso.',
+      );
+    }
+
     const cities = await this.cityRepository.find({
       order: { name: 'ASC' },
     });
@@ -50,7 +90,7 @@ export class CityService {
     return CityResult.fromEntity(city);
   }
 
-  async findCity(cityId: string): Promise<CityResult> {
+  async findCity(cityId: string, user: UserRequest): Promise<CityResult> {
     const city = await this.cityRepository.findOne({
       where: { _id: new ObjectId(cityId) },
     });
@@ -58,11 +98,17 @@ export class CityService {
     if (!city) {
       throw new NotFoundException('Cidade não encontrada.');
     }
+
+    this.ensureAdminCityAccess(cityId, user);
 
     return CityResult.fromEntity(city);
   }
 
-  async updateCity(cityId: string, data: UpdateCityDto): Promise<CityResult> {
+  async updateCity(
+    cityId: string,
+    data: UpdateCityDto,
+    user: UserRequest,
+  ): Promise<CityResult> {
     const city = await this.cityRepository.findOne({
       where: { _id: new ObjectId(cityId) },
     });
@@ -70,6 +116,8 @@ export class CityService {
     if (!city) {
       throw new NotFoundException('Cidade não encontrada.');
     }
+
+    this.ensureAdminCityAccess(cityId, user);
 
     const updatedCity = await this.cityRepository.save({
       ...city,
