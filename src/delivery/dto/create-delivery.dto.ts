@@ -88,6 +88,10 @@ export class CreateDeliveryDto {
 
   @IsString()
   @IsOptional()
+  orderLocator?: string;
+
+  @IsString()
+  @IsOptional()
   ifoodMerchantId?: string;
 
   @IsString()

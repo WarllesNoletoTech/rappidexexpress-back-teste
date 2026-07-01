@@ -1595,6 +1595,7 @@ export class DeliveryService implements OnModuleInit {
       addressMapsUrl,
       ifoodOrderId,
       ifoodDisplayId,
+      orderLocator,
       ifoodMerchantId,
       ifoodMerchantName,
     } = deliveryData;
@@ -1676,6 +1677,7 @@ export class DeliveryService implements OnModuleInit {
         addressMapsUrl,
         ifoodOrderId,
         ifoodDisplayId,
+        orderLocator: orderLocator || ifoodDisplayId || ifoodOrderId,
         ifoodMerchantId,
         ifoodMerchantName,
         ifoodImportedAt: ifoodOrderId ? addHours(new Date(), -3) : undefined,

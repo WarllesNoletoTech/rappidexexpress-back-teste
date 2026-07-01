@@ -122,6 +122,9 @@ export class DeliveryEntity {
   ifoodDisplayId?: string;
 
   @Column({ nullable: true })
+  orderLocator?: string;
+
+  @Column({ nullable: true })
   ifoodMerchantId?: string;
 
   @Column({ nullable: true })

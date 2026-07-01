@@ -131,6 +131,8 @@ export class IfoodImportService {
 
         deliveryDto.ifoodOrderId = orderId;
         deliveryDto.ifoodDisplayId = order?.displayId ?? orderId;
+        deliveryDto.orderLocator =
+          deliveryDto.orderLocator || order?.displayId || orderId;
         deliveryDto.ifoodMerchantId = realMerchantId;
         deliveryDto.ifoodMerchantName = order?.merchant?.name ?? '';
 
@@ -148,7 +150,7 @@ export class IfoodImportService {
         );
 
         this.logger.log(
-          `iFood: pedido importado e entrega criada | merchantId=${order?.merchant?.id ?? merchantId ?? 'n/a'} orderId=${orderId} deliveryId=${createdDelivery.id} shopkeeperId=${targetShopkeeperId}`,
+          `iFood: pedido importado e entrega criada | merchantId=${order?.merchant?.id ?? merchantId ?? 'n/a'} orderId=${orderId} orderLocator=${deliveryDto.orderLocator || 'n/a'} status=${deliveryDto.status} deliveryId=${createdDelivery.id} shopkeeperId=${targetShopkeeperId}`,
         );
 
         await this.ifoodOrderLinkService.createLink({

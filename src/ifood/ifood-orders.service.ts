@@ -526,6 +526,25 @@ export class IfoodOrdersService {
     };
   }
 
+
+  private resolveOrderLocator(order: any, orderId: string): string {
+    const candidates = [
+      order?.displayId,
+      order?.orderCode,
+      order?.orderNumber,
+      order?.shortCode,
+      order?.localizer,
+      order?.customer?.phone?.localizer,
+      orderId,
+    ];
+
+    const locator = candidates
+      .map((value) => String(value ?? '').trim())
+      .find((value) => value.length > 0);
+
+    return locator || orderId;
+  }
+
   async buildCreateDeliveryDto(
     orderId: string,
     merchantId?: string | null,
@@ -542,6 +561,7 @@ export class IfoodOrdersService {
       order?.customer?.phone?.number ?? '',
     );
     const displayId = order?.displayId ?? orderId;
+    const orderLocator = this.resolveOrderLocator(order, orderId);
     const localizer = order?.customer?.phone?.localizer ?? null;
 
     const totalValue =
@@ -598,6 +618,7 @@ export class IfoodOrdersService {
       payment: this.resolvePaymentType(order),
       soda: 'NÃO',
       observation,
+      orderLocator,
     };
   }
 

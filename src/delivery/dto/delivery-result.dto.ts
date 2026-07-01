@@ -143,6 +143,9 @@ export class DeliveryResult {
   ifoodDisplayId?: string;
 
   @Expose()
+  orderLocator?: string;
+
+  @Expose()
   ifoodMerchantId?: string;
   @Expose()
   ifoodMerchantName?: string;
@@ -181,6 +184,11 @@ export class DeliveryResult {
         isIfoodOrder: (delivery as any).isIfoodOrder ?? false,
         ifoodOrderId: (delivery as any).ifoodOrderId ?? null,
         ifoodDisplayId: (delivery as any).ifoodDisplayId ?? null,
+        orderLocator:
+          (delivery as any).orderLocator ??
+          (delivery as any).ifoodDisplayId ??
+          (delivery as any).ifoodOrderId ??
+          null,
         ifoodMerchantId: (delivery as any).ifoodMerchantId ?? null,
         ifoodMerchantName: ifoodMerchantCardData.ifoodMerchantName,
         ifoodMerchantLocation: ifoodMerchantCardData.ifoodMerchantLocation,
