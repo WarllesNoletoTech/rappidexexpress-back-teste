@@ -16,6 +16,10 @@ export class CitySeedService implements OnModuleInit {
   ) {}
 
   async onModuleInit(): Promise<void> {
+    await this.seedDefaultCitySafely();
+  }
+
+  async seedDefaultCitySafely(): Promise<void> {
     const cityExists = await this.cityRepository.findOne({
       where: { name: DEFAULT_CITY.name, state: DEFAULT_CITY.state },
     });
