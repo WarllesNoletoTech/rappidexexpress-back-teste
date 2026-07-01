@@ -1677,7 +1677,7 @@ export class DeliveryService implements OnModuleInit {
         addressMapsUrl,
         ifoodOrderId,
         ifoodDisplayId,
-        orderLocator: orderLocator || ifoodDisplayId || ifoodOrderId,
+        orderLocator: orderLocator || undefined,
         ifoodMerchantId,
         ifoodMerchantName,
         ifoodImportedAt: ifoodOrderId ? addHours(new Date(), -3) : undefined,
@@ -2272,6 +2272,50 @@ export class DeliveryService implements OnModuleInit {
       ifoodArrivedAtDestinationSynced:
         data.ifoodArrivedAtDestinationSynced ?? false,
     };
+  }
+
+  async updateIfoodOrderLocatorIfBetter(
+    deliveryId: string,
+    nextLocator?: string | null,
+    ifoodDisplayId?: string | null,
+  ) {
+    const normalizedLocator = String(nextLocator || '').trim();
+
+    if (!normalizedLocator) {
+      return;
+    }
+
+    const delivery = await this.deliveryRepository.findOne({
+      where: { id: deliveryId, isActive: true } as any,
+    });
+
+    if (!delivery) {
+      return;
+    }
+
+    const currentLocator = String((delivery as any).orderLocator || '').trim();
+    const displayId = String(
+      ifoodDisplayId || (delivery as any).ifoodDisplayId || '',
+    ).trim();
+    const ifoodOrderId = String((delivery as any).ifoodOrderId || '').trim();
+
+    if (
+      currentLocator &&
+      currentLocator !== displayId &&
+      currentLocator !== ifoodOrderId
+    ) {
+      return;
+    }
+
+    await this.deliveryRepository.updateOne(
+      { id: deliveryId } as any,
+      {
+        $set: {
+          orderLocator: normalizedLocator,
+          updatedAt: addHours(new Date(), -3),
+        },
+      } as any,
+    );
   }
 
   private async saveIfoodSyncFlags(

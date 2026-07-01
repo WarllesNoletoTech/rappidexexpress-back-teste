@@ -526,23 +526,44 @@ export class IfoodOrdersService {
     };
   }
 
+  resolveOrderLocator(order: any): { value: string; source: string | null } {
+    const blockedOrderNumbers = new Set(
+      [order?.displayId, order?.orderNumber, order?.orderCode, order?.id]
+        .map((value) => String(value ?? '').trim())
+        .filter(Boolean),
+    );
 
-  private resolveOrderLocator(order: any, orderId: string): string {
     const candidates = [
-      order?.displayId,
-      order?.orderCode,
-      order?.orderNumber,
-      order?.shortCode,
-      order?.localizer,
-      order?.customer?.phone?.localizer,
-      orderId,
+      { source: 'localizer', value: order?.localizer },
+      { source: 'locator', value: order?.locator },
+      { source: 'orderLocalizer', value: order?.orderLocalizer },
+      { source: 'displayLocalizer', value: order?.displayLocalizer },
+      { source: 'deliveryCode', value: order?.deliveryCode },
+      { source: 'verificationCode', value: order?.verificationCode },
+      { source: 'shortCode', value: order?.shortCode },
+      { source: 'trackingCode', value: order?.trackingCode },
+      { source: 'metadata.localizer', value: order?.metadata?.localizer },
+      { source: 'order.localizer', value: order?.order?.localizer },
+      { source: 'customer.localizer', value: order?.customer?.localizer },
+      {
+        source: 'customer.phone.localizer',
+        value: order?.customer?.phone?.localizer,
+      },
+      { source: 'delivery.localizer', value: order?.delivery?.localizer },
     ];
 
-    const locator = candidates
-      .map((value) => String(value ?? '').trim())
-      .find((value) => value.length > 0);
+    const found = candidates
+      .map((candidate) => ({
+        ...candidate,
+        value: String(candidate.value ?? '').trim(),
+      }))
+      .find(
+        (candidate) =>
+          candidate.value.length > 0 &&
+          !blockedOrderNumbers.has(candidate.value),
+      );
 
-    return locator || orderId;
+    return { value: found?.value || '', source: found?.source || null };
   }
 
   async buildCreateDeliveryDto(
@@ -561,8 +582,9 @@ export class IfoodOrdersService {
       order?.customer?.phone?.number ?? '',
     );
     const displayId = order?.displayId ?? orderId;
-    const orderLocator = this.resolveOrderLocator(order, orderId);
-    const localizer = order?.customer?.phone?.localizer ?? null;
+    const orderLocatorResult = this.resolveOrderLocator(order);
+    const orderLocator = orderLocatorResult.value;
+    const localizer = orderLocator || null;
 
     const totalValue =
       order?.total?.orderAmount ??
@@ -640,7 +662,7 @@ export class IfoodOrdersService {
 
     return Boolean(
       shopkeeper?.useIfoodIntegration &&
-        shopkeeper?.ifoodWithoutPreparationTime,
+      shopkeeper?.ifoodWithoutPreparationTime,
     );
   }
 

@@ -71,8 +71,19 @@ export class IfoodImportService {
           await this.ifoodOrderLinkService.findByIfoodOrderId(orderId);
 
         if (existingLink) {
+          const order = await this.ifoodOrdersService.getOrderDetails(
+            orderId,
+            existingLink.merchantId || merchantId,
+          );
+          const locatorResult =
+            this.ifoodOrdersService.resolveOrderLocator(order);
+          await this.deliveryService.updateIfoodOrderLocatorIfBetter(
+            existingLink.deliveryId,
+            locatorResult.value,
+            order?.displayId ?? existingLink.ifoodDisplayId ?? orderId,
+          );
           this.logger.log(
-            `iFood: pedido ignorado porque já existe vínculo | merchantId=${existingLink.merchantId || merchantId || 'n/a'} orderId=${orderId}`,
+            `iFood: pedido ignorado porque já existe vínculo | merchantId=${existingLink.merchantId || merchantId || 'n/a'} orderId=${orderId} displayId=${order?.displayId ?? existingLink.ifoodDisplayId ?? ''} localizador=${locatorResult.value || 'Não informado'} origemLocalizador=${locatorResult.source || 'não encontrado'}`,
           );
           continue;
         }
@@ -105,8 +116,17 @@ export class IfoodImportService {
           );
 
         if (existingRealMerchantLink) {
+          const locatorResult =
+            this.ifoodOrdersService.resolveOrderLocator(order);
+          await this.deliveryService.updateIfoodOrderLocatorIfBetter(
+            existingRealMerchantLink.deliveryId,
+            locatorResult.value,
+            order?.displayId ??
+              existingRealMerchantLink.ifoodDisplayId ??
+              orderId,
+          );
           this.logger.log(
-            `iFood: pedido ignorado porque já existe vínculo após consulta de detalhes | merchantId=${realMerchantId || merchantId || 'n/a'} orderId=${orderId} deliveryId=${existingRealMerchantLink.deliveryId}`,
+            `iFood: pedido ignorado porque já existe vínculo após consulta de detalhes | merchantId=${realMerchantId || merchantId || 'n/a'} orderId=${orderId} deliveryId=${existingRealMerchantLink.deliveryId} displayId=${order?.displayId ?? existingRealMerchantLink.ifoodDisplayId ?? ''} localizador=${locatorResult.value || 'Não informado'} origemLocalizador=${locatorResult.source || 'não encontrado'}`,
           );
           continue;
         }
@@ -130,9 +150,11 @@ export class IfoodImportService {
           );
 
         deliveryDto.ifoodOrderId = orderId;
+        const locatorResult =
+          this.ifoodOrdersService.resolveOrderLocator(order);
+
         deliveryDto.ifoodDisplayId = order?.displayId ?? orderId;
-        deliveryDto.orderLocator =
-          deliveryDto.orderLocator || order?.displayId || orderId;
+        deliveryDto.orderLocator = locatorResult.value || undefined;
         deliveryDto.ifoodMerchantId = realMerchantId;
         deliveryDto.ifoodMerchantName = order?.merchant?.name ?? '';
 
@@ -150,7 +172,7 @@ export class IfoodImportService {
         );
 
         this.logger.log(
-          `iFood: pedido importado e entrega criada | merchantId=${order?.merchant?.id ?? merchantId ?? 'n/a'} orderId=${orderId} orderLocator=${deliveryDto.orderLocator || 'n/a'} status=${deliveryDto.status} deliveryId=${createdDelivery.id} shopkeeperId=${targetShopkeeperId}`,
+          `iFood: pedido importado e entrega criada | merchantId=${order?.merchant?.id ?? merchantId ?? 'n/a'} orderId=${orderId} displayId=${deliveryDto.ifoodDisplayId || ''} localizador=${deliveryDto.orderLocator || 'Não informado'} origemLocalizador=${locatorResult.source || 'não encontrado'} status=${deliveryDto.status} deliveryId=${createdDelivery.id} shopkeeperId=${targetShopkeeperId}`,
         );
 
         await this.ifoodOrderLinkService.createLink({
