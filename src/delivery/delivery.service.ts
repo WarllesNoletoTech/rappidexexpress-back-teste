@@ -1189,29 +1189,8 @@ export class DeliveryService implements OnModuleInit {
   }
 
   private getAdminDeliveryFeeValue(city: CityEntity | null) {
-    return this.parseCurrencyValue(city?.deliveryValue);
-  }
-
-  private parseCurrencyValue(value?: string | number | null) {
-    if (typeof value === 'number') {
-      return Number.isFinite(value) ? value : 0;
-    }
-
-    const normalizedValue = String(value ?? '')
-      .trim()
-      .replace(/R\$/gi, '')
-      .replace(/\s/g, '');
-
-    if (!normalizedValue) {
-      return 0;
-    }
-
-    const decimalValue = normalizedValue.includes(',')
-      ? normalizedValue.replace(/\./g, '').replace(',', '.')
-      : normalizedValue;
-    const parsedValue = Number(decimalValue);
-
-    return Number.isFinite(parsedValue) ? parsedValue : 0;
+    const value = Number(city?.deliveryFeeValue);
+    return Number.isFinite(value) ? value : 0;
   }
 
   private parseBooleanQuery(value?: boolean | string) {
