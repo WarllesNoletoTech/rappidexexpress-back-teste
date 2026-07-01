@@ -49,8 +49,15 @@ export class CityService {
   }
 
   async listCities(user: UserRequest): Promise<CityResult[]> {
-    if (user.type === UserType.ADMIN) {
-      if (!user.cityId) {
+    const shouldReturnOnlyUserCity = [
+      UserType.ADMIN,
+      UserType.MOTOBOY,
+      UserType.SHOPKEEPER,
+      UserType.SHOPKEEPERADMIN,
+    ].includes(user.type as UserType);
+
+    if (shouldReturnOnlyUserCity) {
+      if (!user.cityId || !ObjectId.isValid(user.cityId)) {
         return [];
       }
 
