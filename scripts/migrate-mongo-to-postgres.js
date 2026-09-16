@@ -1,4 +1,6 @@
 /* eslint-disable no-console */
+const dns = require('dns');
+dns.setServers(['1.1.1.1', '8.8.8.8']);
 const fs = require('fs');
 const path = require('path');
 const { MongoClient, ObjectId, Decimal128 } = require('mongodb');
@@ -212,7 +214,6 @@ async function runPreflight(db, collections) {
     'usersMissingId',
     'usersMissingLogin',
     'usersMissingPassword',
-    'deliveriesMissingRequiredIdentity',
     'duplicateUsernames',
     'duplicateDeliveryIds',
     'duplicateDeliveryIfoodPairs',

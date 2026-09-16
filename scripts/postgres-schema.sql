@@ -43,9 +43,9 @@ CREATE TABLE IF NOT EXISTS "user_entity" (
   "ifoodMerchants" jsonb,
   "ifoodClientId" text,
   "ifoodClientSecret" text,
-  "ifoodOrdersReleased" integer NOT NULL DEFAULT 0,
-  "ifoodOrdersUsed" integer NOT NULL DEFAULT 0,
-  "ifoodOrdersAvailable" integer NOT NULL DEFAULT 0,
+  "ifoodOrdersReleased" bigint NOT NULL DEFAULT 0,
+  "ifoodOrdersUsed" bigint NOT NULL DEFAULT 0,
+  "ifoodOrdersAvailable" bigint NOT NULL DEFAULT 0,
   "createdAt" timestamptz NOT NULL DEFAULT now(),
   "createdBy" varchar,
   "updatedAt" timestamptz NOT NULL DEFAULT now()
@@ -150,10 +150,10 @@ CREATE TABLE IF NOT EXISTS "ifood_credit_history_entity" (
   "id" varchar(64) NOT NULL,
   "companyId" varchar(64) NOT NULL,
   "operationType" varchar NOT NULL,
-  "amount" integer NOT NULL,
-  "releasedAfterOperation" integer NOT NULL,
-  "usedAfterOperation" integer NOT NULL,
-  "availableAfterOperation" integer NOT NULL,
+  "amount" bigint NOT NULL,
+  "releasedAfterOperation" bigint NOT NULL,
+  "usedAfterOperation" bigint NOT NULL,
+  "availableAfterOperation" bigint NOT NULL,
   "performedBy" varchar,
   "orderId" varchar,
   "reason" text,
@@ -225,3 +225,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS "IDX_IFOOD_CREDIT_LOGICAL_ID" ON "ifood_credit
 CREATE INDEX IF NOT EXISTS "IDX_IFOOD_CREDIT_COMPANY_CREATED" ON "ifood_credit_history_entity" ("companyId", "createdAt" DESC);
 CREATE INDEX IF NOT EXISTS "IDX_FIN_SETTLEMENT_ESTABLISHMENT_PERIOD" ON "financial_settlement_history_entity" ("establishmentId", "periodStart", "periodEnd");
 CREATE INDEX IF NOT EXISTS "IDX_CITY_NAME_STATE" ON "city_entity" ("name", "state");
+ALTER TABLE "user_entity"
+  ALTER COLUMN "ifoodOrdersReleased" TYPE bigint USING "ifoodOrdersReleased"::bigint,
+  ALTER COLUMN "ifoodOrdersUsed" TYPE bigint USING "ifoodOrdersUsed"::bigint,
+  ALTER COLUMN "ifoodOrdersAvailable" TYPE bigint USING "ifoodOrdersAvailable"::bigint;
+
+ALTER TABLE "ifood_credit_history_entity"
+  ALTER COLUMN "amount" TYPE bigint USING "amount"::bigint,
+  ALTER COLUMN "releasedAfterOperation" TYPE bigint USING "releasedAfterOperation"::bigint,
+  ALTER COLUMN "usedAfterOperation" TYPE bigint USING "usedAfterOperation"::bigint,
+  ALTER COLUMN "availableAfterOperation" TYPE bigint USING "availableAfterOperation"::bigint;
