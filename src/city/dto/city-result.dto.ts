@@ -37,7 +37,7 @@ export class CityResult {
 
   static fromEntity(city: CityEntity): CityResult {
     return plainToClass(CityResult, {
-      id: city.id?.toHexString?.() ?? `${city.id}`,
+      id: String(city.id),
       name: city.name,
       state: city.state,
       clientWhatsappMessage: city.clientWhatsappMessage,

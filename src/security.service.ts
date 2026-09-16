@@ -1,6 +1,6 @@
+import { PostgresCompatRepository } from './database/postgres-compat.repository';
 import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { MongoRepository } from 'typeorm';
 import { addHours } from 'date-fns';
 import { UserEntity } from './database/entities/user.entity';
 import { UserType } from './shared/constants/enums.constants';
@@ -12,7 +12,7 @@ const AUTOCLICK_BLOCK_REASON = 'Uso suspeito de autoclick';
 export class SecurityService {
   constructor(
     @InjectRepository(UserEntity)
-    private readonly userRepository: MongoRepository<UserEntity>,
+    private readonly userRepository: PostgresCompatRepository<UserEntity>,
   ) {}
 
   async reportAutoclick(user: UserRequest) {

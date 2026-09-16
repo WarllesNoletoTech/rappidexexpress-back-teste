@@ -1,12 +1,5 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { TypeOrmModule } from '@nestjs/typeorm';
-import {
-  IfoodCreditHistoryEntity,
-  IfoodEventEntity,
-  IfoodOrderLinkEntity,
-  UserEntity,
-} from '../database/entities';
 import { DeliveryModule } from '../delivery/delivery.module';
 import { IfoodAdminController } from './ifood-admin.controller';
 import { IfoodWebhookController } from './ifood-webhook.controller';
@@ -23,16 +16,7 @@ import { IfoodWebhookService } from './ifood-webhook.service';
 import { IfoodHttpService } from './ifood-http.service';
 
 @Module({
-  imports: [
-    ConfigModule,
-    forwardRef(() => DeliveryModule),
-    TypeOrmModule.forFeature([
-      IfoodOrderLinkEntity,
-      IfoodEventEntity,
-      IfoodCreditHistoryEntity,
-      UserEntity,
-    ]),
-  ],
+  imports: [ConfigModule, forwardRef(() => DeliveryModule)],
   controllers: [IfoodAdminController, IfoodWebhookController],
   providers: [
     IfoodAuthService,

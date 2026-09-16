@@ -1,9 +1,9 @@
+import { PostgresCompatRepository } from '../../database/postgres-compat.repository';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { PassportStrategy } from '@nestjs/passport';
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { MongoRepository } from 'typeorm';
 import { UserEntity } from '../../database/entities/user.entity';
 
 @Injectable()
@@ -11,7 +11,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(
     private readonly configService: ConfigService,
     @InjectRepository(UserEntity)
-    private readonly userRepository: MongoRepository<UserEntity>,
+    private readonly userRepository: PostgresCompatRepository<UserEntity>,
   ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),

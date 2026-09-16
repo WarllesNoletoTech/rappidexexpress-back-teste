@@ -1,3 +1,4 @@
+import { PostgresCompatRepository } from '../database/postgres-compat.repository';
 import {
   BadRequestException,
   InternalServerErrorException,
@@ -6,7 +7,6 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { MongoRepository } from 'typeorm';
 import { CreateDeliveryDto } from '../delivery/dto';
 import { UserEntity } from '../database/entities';
 import {
@@ -25,7 +25,7 @@ export class IfoodOrdersService {
     private readonly ifoodHttpService: IfoodHttpService,
     private readonly configService: ConfigService,
     @InjectRepository(UserEntity)
-    private readonly userRepository: MongoRepository<UserEntity>,
+    private readonly userRepository: PostgresCompatRepository<UserEntity>,
   ) {}
 
   async getOrderDetails(orderId: string, merchantId?: string | null) {

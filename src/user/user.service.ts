@@ -1,3 +1,5 @@
+import { PostgresCompatRepository } from '../database/postgres-compat.repository';
+import { toSafeUserLogSnapshot } from '../shared/utils/user-log-snapshot';
 import {
   BadRequestException,
   Injectable,
@@ -5,11 +7,9 @@ import {
   Logger,
   UnauthorizedException,
 } from '@nestjs/common';
-import { MongoRepository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import { InjectRepository } from '@nestjs/typeorm';
 import { v4 as uuid } from 'uuid';
-import { ObjectId } from 'mongodb';
 
 import {
   CityEntity,
@@ -40,13 +40,13 @@ export class UserService {
   private readonly logger = new Logger(UserService.name);
   constructor(
     @InjectRepository(UserEntity)
-    private readonly userRepository: MongoRepository<UserEntity>,
+    private readonly userRepository: PostgresCompatRepository<UserEntity>,
     @InjectRepository(DeliveryEntity)
-    private readonly deliveryRepository: MongoRepository<DeliveryEntity>,
+    private readonly deliveryRepository: PostgresCompatRepository<DeliveryEntity>,
     @InjectRepository(LogEntity)
-    private readonly logRepository: MongoRepository<LogEntity>,
+    private readonly logRepository: PostgresCompatRepository<LogEntity>,
     @InjectRepository(CityEntity)
-    private readonly cityRepository: MongoRepository<CityEntity>,
+    private readonly cityRepository: PostgresCompatRepository<CityEntity>,
     private readonly ifoodImportService: IfoodImportService,
   ) {}
 
@@ -86,7 +86,7 @@ export class UserService {
       const newUser = await this.userRepository.save({
         id: uuid(),
         ...data,
-        cityId: city.id.toHexString(),
+        cityId: city.id,
         phone,
         password: passHash,
         useIfoodIntegration,
@@ -203,7 +203,7 @@ export class UserService {
     let cityId = userToUpdate.cityId;
     if (data.cityId) {
       const city = await this.resolveCity(data.cityId, requester);
-      cityId = city.id.toHexString();
+      cityId = city.id;
     }
 
     try {
@@ -396,7 +396,7 @@ export class UserService {
   ): Promise<CityEntity> {
     if (id) {
       const city = await this.cityRepository.findOne({
-        where: { _id: new ObjectId(id) },
+        where: { id },
       });
 
       if (!city) {
@@ -404,7 +404,7 @@ export class UserService {
       }
 
       if (requestingUser) {
-        this.ensureCityAccess(requestingUser, city.id.toHexString());
+        this.ensureCityAccess(requestingUser, city.id);
       }
 
       return city;
@@ -416,7 +416,7 @@ export class UserService {
       }
 
       const city = await this.cityRepository.findOne({
-        where: { _id: new ObjectId(requestingUser.cityId) },
+        where: { id: requestingUser.cityId },
       });
 
       if (!city) {
@@ -624,7 +624,7 @@ export class UserService {
       where: 'Atualizar notificação',
       type: 'Log para atualizar notificação',
       error: JSON.stringify(data.notification),
-      user: existsUserWithThisUsername,
+      user: toSafeUserLogSnapshot(existsUserWithThisUsername),
       status: 'notificação do usuário atualizada',
     };
 
@@ -642,7 +642,7 @@ export class UserService {
         where: 'Atualizar notificação',
         type: 'Log para atualizar notificação',
         error: `${error}`,
-        user: existsUserWithThisUsername,
+        user: toSafeUserLogSnapshot(existsUserWithThisUsername),
         status: JSON.stringify(data.notification),
       };
       await this.logRepository.save(newLogError);

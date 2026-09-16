@@ -22,15 +22,15 @@ export class DatabaseBootstrapService implements OnApplicationBootstrap {
   private async initializeDatabaseSafely(): Promise<void> {
     try {
       if (!this.dataSource.isInitialized) {
-        this.logger.log('Inicializando conexão MongoDB em segundo plano.');
+        this.logger.log('Inicializando conexão PostgreSQL em segundo plano.');
         await this.dataSource.initialize();
       }
 
-      this.logger.log('Conexão MongoDB inicializada com sucesso.');
+      this.logger.log('Conexão PostgreSQL inicializada com sucesso.');
       await this.citySeedService.seedDefaultCitySafely();
     } catch (error: any) {
       this.logger.error(
-        `Falha ao inicializar MongoDB em segundo plano; servidor continuará ativo. ${error?.message || error}`,
+        `Falha ao inicializar PostgreSQL em segundo plano; servidor continuará ativo. ${error?.message || error}`,
         error?.stack,
       );
     }

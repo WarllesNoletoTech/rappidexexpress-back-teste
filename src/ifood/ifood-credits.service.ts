@@ -1,3 +1,4 @@
+import { PostgresCompatRepository } from '../database/postgres-compat.repository';
 import {
   BadRequestException,
   ForbiddenException,
@@ -7,7 +8,6 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { addHours } from 'date-fns';
 import { v4 as uuid } from 'uuid';
-import { MongoRepository } from 'typeorm';
 import {
   IfoodCreditHistoryEntity,
   UserEntity,
@@ -19,9 +19,9 @@ import { UserRequest } from '../shared/interfaces';
 export class IfoodCreditsService {
   constructor(
     @InjectRepository(UserEntity)
-    private readonly userRepository: MongoRepository<UserEntity>,
+    private readonly userRepository: PostgresCompatRepository<UserEntity>,
     @InjectRepository(IfoodCreditHistoryEntity)
-    private readonly creditHistoryRepository: MongoRepository<IfoodCreditHistoryEntity>,
+    private readonly creditHistoryRepository: PostgresCompatRepository<IfoodCreditHistoryEntity>,
   ) {}
 
   private async findCompanyOrFail(companyId: string) {

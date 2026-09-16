@@ -1,5 +1,4 @@
-import { Column, Entity, Index, ObjectIdColumn } from 'typeorm';
-import { ObjectId } from 'mongodb';
+import { Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 
 @Entity()
 @Index(
@@ -7,14 +6,16 @@ import { ObjectId } from 'mongodb';
   ['ifoodOrderId', 'merchantId'],
   { unique: true },
 )
+@Index('IDX_IFOOD_ORDER_LINK_DELIVERY', ['deliveryId'])
+@Index('IDX_IFOOD_ORDER_LINK_SHOPKEEPER_CREATED', ['shopkeeperId', 'createdAt'])
 export class IfoodOrderLinkEntity {
-  @ObjectIdColumn()
-  internalId: ObjectId;
+  @PrimaryGeneratedColumn('uuid')
+  internalId: string;
 
   @Column()
   ifoodOrderId: string;
 
-  @Column()
+  @Column({ nullable: true })
   ifoodDisplayId: string;
 
   @Column()
@@ -23,12 +24,12 @@ export class IfoodOrderLinkEntity {
   @Column({ nullable: true })
   merchantName?: string;
 
-  @Column()
+  @Column({ type: 'varchar', length: 64 })
   deliveryId: string;
 
-  @Column()
+  @Column({ type: 'varchar', length: 64 })
   shopkeeperId: string;
 
-  @Column()
+  @Column({ type: 'timestamptz' })
   createdAt: Date;
 }

@@ -1,13 +1,13 @@
+import { PostgresCompatRepository } from '../database/postgres-compat.repository';
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { MongoRepository } from 'typeorm';
 import { IfoodEventEntity } from '../database/entities';
 
 @Injectable()
 export class IfoodEventService {
   constructor(
     @InjectRepository(IfoodEventEntity)
-    private readonly ifoodEventRepository: MongoRepository<IfoodEventEntity>,
+    private readonly ifoodEventRepository: PostgresCompatRepository<IfoodEventEntity>,
   ) {}
 
   async findByEventId(eventId: string) {

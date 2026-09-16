@@ -1,10 +1,10 @@
-import { Entity, ObjectIdColumn, Column } from 'typeorm';
-import { ObjectId } from 'mongodb';
+import { Column, Entity, Index, PrimaryColumn } from 'typeorm';
 
 @Entity()
+@Index('IDX_CITY_NAME_STATE', ['name', 'state'])
 export class CityEntity {
-  @ObjectIdColumn()
-  id: ObjectId;
+  @PrimaryColumn({ type: 'varchar', length: 64 })
+  id: string;
 
   @Column()
   name: string;
@@ -12,16 +12,16 @@ export class CityEntity {
   @Column({ nullable: false })
   state?: string;
 
-  @Column({ nullable: true })
+  @Column({ nullable: true, type: 'text' })
   clientWhatsappMessage?: string;
 
   @Column({ nullable: true })
   deliveryValue?: string;
 
-  @Column({ nullable: true })
+  @Column({ nullable: true, type: 'double precision' })
   deliveryFeeValue?: number;
 
-  @Column({ nullable: true })
+  @Column({ nullable: true, type: 'double precision' })
   monthlyFeeValue?: number;
 
   @Column({ nullable: true })
@@ -33,6 +33,6 @@ export class CityEntity {
   @Column({ nullable: true })
   whatsappPhoneNumberId?: string;
 
-  @Column({ nullable: true })
+  @Column({ nullable: true, type: 'text' })
   whatsappCloudToken?: string;
 }

@@ -1,3 +1,4 @@
+import { PostgresCompatRepository } from '../database/postgres-compat.repository';
 import {
   Injectable,
   InternalServerErrorException,
@@ -5,7 +6,6 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { MongoRepository } from 'typeorm';
 import { UserEntity } from '../database/entities';
 import { AuthContext, IfoodAuthService } from './ifood-auth.service';
 import { IfoodHttpService } from './ifood-http.service';
@@ -22,7 +22,7 @@ export class IfoodPollingService {
     private readonly ifoodHttpService: IfoodHttpService,
     private readonly configService: ConfigService,
     @InjectRepository(UserEntity)
-    private readonly userRepository: MongoRepository<UserEntity>,
+    private readonly userRepository: PostgresCompatRepository<UserEntity>,
   ) {}
 
   async pollEvents() {

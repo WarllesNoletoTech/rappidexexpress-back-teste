@@ -1,5 +1,4 @@
-import { ObjectId } from 'mongodb';
-import { Column, Entity, Index, ObjectIdColumn } from 'typeorm';
+import { Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 import {
   PaymentType,
   StatusDelivery,
@@ -7,16 +6,32 @@ import {
 import { UserEntity } from './user.entity';
 
 @Entity()
-@Index(['ifoodOrderId', 'ifoodMerchantId'], {
-  unique: true,
-  sparse: true,
-})
+@Index('IDX_DELIVERY_LOGICAL_ID', ['id'], { unique: true })
+@Index('IDX_DELIVERY_IFOOD_ORDER_MERCHANT_UNIQUE', ['ifoodOrderId', 'ifoodMerchantId'], { unique: true })
+@Index('IDX_DELIVERY_STATUS', ['status'])
+@Index('IDX_DELIVERY_ESTABLISHMENT_CITY', ['establishmentCityId'])
+@Index('IDX_DELIVERY_MOTOBOY', ['motoboyId'])
+@Index('IDX_DELIVERY_ESTABLISHMENT', ['establishmentId'])
+@Index('IDX_DELIVERY_CREATED_AT', ['createdAt'])
+@Index('IDX_DELIVERY_FINISHED_AT', ['finishedAt'])
+@Index('IDX_DELIVERY_ACTIVE_CITY_CREATED', ['isActive', 'establishmentCityId', 'createdAt'])
+@Index('IDX_DELIVERY_ACTIVE_STATUS_CITY_FINISHED', [
+  'isActive',
+  'status',
+  'establishmentCityId',
+  'finishedAt',
+])
+@Index('IDX_DELIVERY_ACTIVE_MOTOBOY_STATUS_CREATED', [
+  'isActive',
+  'motoboyId',
+  'status',
+  'createdAt',
+])
 export class DeliveryEntity {
-  @ObjectIdColumn()
-  internalId: ObjectId;
+  @PrimaryGeneratedColumn('uuid')
+  internalId: string;
 
-  @Column('uuid')
-  @Index({ unique: true })
+  @Column({ type: 'varchar', length: 64 })
   id: string;
 
   @Column()
@@ -25,10 +40,10 @@ export class DeliveryEntity {
   @Column()
   clientPhone: string;
 
-  @Column({ nullable: true })
+  @Column({ nullable: true, type: 'text' })
   clientLocation?: string;
 
-  @Column({ nullable: true })
+  @Column({ nullable: true, type: 'text' })
   clientAddress?: string;
 
   @Column({ nullable: true })
@@ -49,61 +64,72 @@ export class DeliveryEntity {
   @Column({ nullable: true })
   addressZipCode?: string;
 
-  @Column({ nullable: true })
+  @Column({ nullable: true, type: 'double precision' })
   addressLatitude?: number;
 
-  @Column({ nullable: true })
+  @Column({ nullable: true, type: 'double precision' })
   addressLongitude?: number;
 
-  @Column({ nullable: true })
+  @Column({ nullable: true, type: 'text' })
   addressMapsUrl?: string;
 
-  @Column({ type: 'enum', enum: StatusDelivery })
+  @Column({ type: 'varchar' })
   status: StatusDelivery;
 
-  @Column({ unique: false })
+  // Snapshots JSONB mantêm o formato esperado pelo frontend e pela integração iFood.
+  @Column({ type: 'jsonb' })
   establishment: UserEntity;
 
-  @Column({ unique: false, nullable: true })
+  @Column({ type: 'jsonb', nullable: true })
   motoboy: UserEntity;
+
+  // Colunas escalares tornam os filtros/índices eficientes no PostgreSQL.
+  @Column({ type: 'varchar', length: 64 })
+  establishmentId: string;
+
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  establishmentCityId: string;
+
+  @Column({ type: 'varchar', length: 64, nullable: true })
+  motoboyId: string;
 
   @Column()
   value: string;
 
-  @Column()
+  @Column({ type: 'text', nullable: true })
   observation: string;
 
-  @Column({ nullable: true })
+  @Column({ nullable: true, type: 'text' })
   destinationObservation?: string;
 
   @Column({ default: false })
   destinationObservationConfirmed?: boolean;
 
-  @Column()
+  @Column({ nullable: true })
   soda: string;
 
-  @Column({ type: 'enum', enum: PaymentType })
+  @Column({ type: 'varchar' })
   payment: PaymentType;
 
-  @Column()
+  @Column({ default: true })
   isActive: boolean;
 
-  @Column()
+  @Column({ type: 'timestamptz' })
   createdAt: Date;
 
   @Column({ nullable: true })
   createdBy: string;
 
-  @Column()
+  @Column({ type: 'timestamptz' })
   updatedAt: Date;
 
-  @Column()
+  @Column({ nullable: true, type: 'timestamptz' })
   onCoursedAt: Date;
 
-  @Column()
+  @Column({ nullable: true, type: 'timestamptz' })
   collectedAt: Date;
 
-  @Column({ nullable: true })
+  @Column({ nullable: true, type: 'timestamptz' })
   arrivedAtStoreAt?: Date;
 
   @Column({ nullable: true })
@@ -130,23 +156,28 @@ export class DeliveryEntity {
   @Column({ nullable: true })
   ifoodMerchantName?: string;
 
-  @Column({ nullable: true })
+  @Column({ nullable: true, type: 'timestamptz' })
   ifoodImportedAt?: Date;
+
   @Column({ nullable: true })
   ifoodLastEventCode?: string;
+
   @Column({ nullable: true })
   ifoodLastEventFullCode?: string;
-  @Column({ nullable: true })
+
+  @Column({ nullable: true, type: 'timestamptz' })
   ifoodConfirmedAt?: Date;
-  @Column({ nullable: true })
+
+  @Column({ nullable: true, type: 'timestamptz' })
   releasedAt?: Date;
+
   @Column({ nullable: true })
   releasedBy?: string;
 
-  @Column({ nullable: true })
+  @Column({ nullable: true, type: 'timestamptz' })
   arrivedAtDestinationAt?: Date;
 
-  @Column()
+  @Column({ nullable: true, type: 'timestamptz' })
   finishedAt: Date;
 
   @Column({ default: false })

@@ -1,6 +1,7 @@
+import { PostgresCompatRepository } from '../postgres-compat.repository';
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { MongoRepository } from 'typeorm';
+import { v4 as uuid } from 'uuid';
 import { CityEntity } from '../entities/city.entity';
 
 const DEFAULT_CITY = {
@@ -12,7 +13,7 @@ const DEFAULT_CITY = {
 export class CitySeedService implements OnModuleInit {
   constructor(
     @InjectRepository(CityEntity)
-    private readonly cityRepository: MongoRepository<CityEntity>,
+    private readonly cityRepository: PostgresCompatRepository<CityEntity>,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -25,7 +26,7 @@ export class CitySeedService implements OnModuleInit {
     });
 
     if (!cityExists) {
-      await this.cityRepository.insert(DEFAULT_CITY);
+      await this.cityRepository.insert({ id: uuid(), ...DEFAULT_CITY });
     }
   }
 }

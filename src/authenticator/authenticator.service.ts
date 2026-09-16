@@ -1,7 +1,7 @@
+import { PostgresCompatRepository } from '../database/postgres-compat.repository';
 import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
-import { MongoRepository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 
 import { UserEntity } from 'src/database/entities/user.entity';
@@ -13,7 +13,7 @@ export class AuthenticatorService {
   constructor(
     private jwtService: JwtService,
     @InjectRepository(UserEntity)
-    private readonly userRepository: MongoRepository<UserEntity>,
+    private readonly userRepository: PostgresCompatRepository<UserEntity>,
   ) {}
 
   generateJwt(payload) {

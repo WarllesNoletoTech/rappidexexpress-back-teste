@@ -1,3 +1,4 @@
+import { PostgresCompatRepository } from '../database/postgres-compat.repository';
 import {
   BadRequestException,
   Body,
@@ -24,7 +25,6 @@ import { IfoodPollingService } from './ifood-polling.service';
 import { IfoodImportService } from './ifood-import.service';
 import { IfoodReadinessService } from './ifood-readiness.service';
 import { InjectRepository } from '@nestjs/typeorm';
-import { MongoRepository } from 'typeorm';
 import { UserEntity } from '../database/entities';
 
 @Controller('ifood')
@@ -40,7 +40,7 @@ export class IfoodAdminController {
     private readonly ifoodReadinessService: IfoodReadinessService,
     private readonly ifoodCreditsService: IfoodCreditsService,
     @InjectRepository(UserEntity)
-    private readonly userRepository: MongoRepository<UserEntity>,
+    private readonly userRepository: PostgresCompatRepository<UserEntity>,
   ) {}
 
   private ensureDebugRoutesEnabled() {

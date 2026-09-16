@@ -1,3 +1,5 @@
+import { PostgresCompatRepository } from '../database/postgres-compat.repository';
+import { toSafeUserLogSnapshot } from '../shared/utils/user-log-snapshot';
 import {
   BadRequestException,
   forwardRef,
@@ -16,8 +18,6 @@ import {
   UserEntity,
 } from '../database/entities';
 import { InjectRepository } from '@nestjs/typeorm';
-import { MongoRepository } from 'typeorm';
-import { ObjectId } from 'mongodb';
 import { v4 as uuid } from 'uuid';
 import { addHours } from 'date-fns';
 
@@ -57,13 +57,13 @@ export class DeliveryService implements OnModuleInit {
   blockDeliverys = false;
   constructor(
     @InjectRepository(UserEntity)
-    private readonly userRepository: MongoRepository<UserEntity>,
+    private readonly userRepository: PostgresCompatRepository<UserEntity>,
     @InjectRepository(DeliveryEntity)
-    private readonly deliveryRepository: MongoRepository<DeliveryEntity>,
+    private readonly deliveryRepository: PostgresCompatRepository<DeliveryEntity>,
     @InjectRepository(LogEntity)
-    private readonly logRepository: MongoRepository<LogEntity>,
+    private readonly logRepository: PostgresCompatRepository<LogEntity>,
     @InjectRepository(CityEntity)
-    private readonly cityRepository: MongoRepository<CityEntity>,
+    private readonly cityRepository: PostgresCompatRepository<CityEntity>,
     private readonly ordersGateway: OrdersGateway,
     @Inject(forwardRef(() => IfoodOrdersService))
     private readonly ifoodOrdersService: IfoodOrdersService,
@@ -634,100 +634,9 @@ export class DeliveryService implements OnModuleInit {
   }
 
   async onModuleInit() {
-    await this.ensureDeliveryIndexes();
-  }
-
-  private async ensureDeliveryIndexes() {
-    const indexes = [
-      { keys: { status: 1 }, options: { name: 'IDX_DELIVERIES_STATUS' } },
-      {
-        keys: { 'establishment.cityId': 1 },
-        options: { name: 'IDX_DELIVERIES_CITY_ID' },
-      },
-      {
-        keys: { 'motoboy.id': 1 },
-        options: { name: 'IDX_DELIVERIES_MOTOBOY_ID' },
-      },
-      {
-        keys: { 'establishment.id': 1 },
-        options: { name: 'IDX_DELIVERIES_ESTABLISHMENT_ID' },
-      },
-      {
-        keys: { createdAt: -1 },
-        options: { name: 'IDX_DELIVERIES_CREATED_AT' },
-      },
-      {
-        keys: { updatedAt: -1 },
-        options: { name: 'IDX_DELIVERIES_UPDATED_AT' },
-      },
-      {
-        keys: { finishedAt: -1 },
-        options: { name: 'IDX_DELIVERIES_FINISHED_AT' },
-      },
-      { keys: { isActive: 1 }, options: { name: 'IDX_DELIVERIES_IS_ACTIVE' } },
-      {
-        keys: { isActive: 1, 'establishment.cityId': 1, createdAt: -1 },
-        options: { name: 'IDX_DELIVERIES_ACTIVE_CITY_CREATED_AT' },
-      },
-      {
-        keys: {
-          isActive: 1,
-          status: 1,
-          'establishment.cityId': 1,
-          finishedAt: -1,
-        },
-        options: { name: 'IDX_DELIVERIES_ACTIVE_STATUS_CITY_FINISHED_AT' },
-      },
-      {
-        keys: {
-          isActive: 1,
-          status: 1,
-          'establishment.cityId': 1,
-          createdAt: -1,
-        },
-        options: { name: 'IDX_DELIVERIES_ACTIVE_STATUS_CITY_CREATED_AT' },
-      },
-      {
-        keys: { isActive: 1, 'motoboy.id': 1, finishedAt: -1 },
-        options: { name: 'IDX_DELIVERIES_ACTIVE_MOTOBOY_FINISHED_AT' },
-      },
-      {
-        keys: { isActive: 1, 'establishment.id': 1, finishedAt: -1 },
-        options: { name: 'IDX_DELIVERIES_ACTIVE_ESTABLISHMENT_FINISHED_AT' },
-      },
-      {
-        keys: { isActive: 1, 'motoboy.id': 1, status: 1, createdAt: -1 },
-        options: { name: 'IDX_DELIVERIES_ACTIVE_MOTOBOY_STATUS_CREATED_AT' },
-      },
-      {
-        keys: { ifoodOrderId: 1, ifoodMerchantId: 1 },
-        options: {
-          name: 'IDX_DELIVERIES_IFOOD_ORDER_MERCHANT_UNIQUE',
-          unique: true,
-          partialFilterExpression: {
-            ifoodOrderId: { $type: 'string' },
-            ifoodMerchantId: { $type: 'string' },
-          },
-        },
-      },
-    ];
-
-    for (const index of indexes) {
-      try {
-        await this.deliveryRepository.createCollectionIndex(
-          index.keys,
-          index.options,
-        );
-        this.logger.log(
-          `Índice MongoDB garantido em delivery: ${index.options.name}`,
-        );
-      } catch (error: any) {
-        this.logger.error(
-          `Falha ao garantir índice MongoDB em delivery: ${index.options.name}. keys=${JSON.stringify(index.keys)} unique=${Boolean((index.options as any).unique)} code=${error?.code || 'N/A'} codeName=${error?.codeName || 'N/A'} message=${error?.message || error}. Rode npm run diagnose:mongo no Heroku para localizar documentos duplicados/incompatíveis.`,
-          error?.stack,
-        );
-      }
-    }
+    this.logger.log(
+      'PostgreSQL ativo: índices de delivery são gerenciados pelo schema SQL do Rappidex.',
+    );
   }
 
   private shouldSyncIfoodInBackground(status?: StatusDelivery) {
@@ -792,7 +701,7 @@ export class DeliveryService implements OnModuleInit {
       where: 'Criação de um delivery',
       type: 'Log para notificações',
       error: 'Sem error',
-      user: userFinded,
+      user: toSafeUserLogSnapshot(userFinded),
       status: 'Notificação enviada.',
     };
 
@@ -1009,7 +918,7 @@ export class DeliveryService implements OnModuleInit {
         totalEntregas,
         valorAdminPorEntrega,
         totalValorAdmin: totalEntregas * valorAdminPorEntrega,
-        cityId: city?.id?.toHexString?.() ?? countQueryParams.cityId ?? null,
+        cityId: city?.id ?? countQueryParams.cityId ?? null,
         cityName: city?.name ?? null,
         createdIn: dateRange.createdIn,
         createdUntil: dateRange.createdUntil,
@@ -1128,7 +1037,7 @@ export class DeliveryService implements OnModuleInit {
   ) {
     const where: Record<string, any> = {
       isActive: true,
-      motoboy: { $ne: null },
+      motoboyId: { $ne: null },
       status: {
         $nin: [StatusDelivery.FINISHED, StatusDelivery.CANCELED],
       },
@@ -1179,12 +1088,12 @@ export class DeliveryService implements OnModuleInit {
   }
 
   private async findCityEntityById(cityId: string) {
-    if (!cityId || !ObjectId.isValid(cityId)) {
+    if (!cityId) {
       return null;
     }
 
     return this.cityRepository.findOne({
-      where: { _id: new ObjectId(cityId) },
+      where: { id: cityId },
     });
   }
 
@@ -1540,6 +1449,50 @@ export class DeliveryService implements OnModuleInit {
     return DeliveryResult.fromEntity(deliveryUpdated);
   }
 
+  private toDeliveryEstablishmentSnapshot(user: any) {
+    if (!user) return null;
+
+    return {
+      id: user.id,
+      name: user.name,
+      phone: user.phone,
+      profileImage: user.profileImage ?? null,
+      location: user.location ?? null,
+      pix: user.pix ?? null,
+      cityId: user.cityId ?? null,
+      cityName: user.cityName ?? null,
+      notification: user.notification?.subscriptionId
+        ? { subscriptionId: user.notification.subscriptionId }
+        : null,
+      usesExternalIfoodPdv: Boolean(user.usesExternalIfoodPdv),
+      ifoodMerchants: Array.isArray(user.ifoodMerchants)
+        ? user.ifoodMerchants.map((merchant: any) => ({
+            merchantId: String(merchant?.merchantId || '').trim(),
+            name: String(merchant?.name || '').trim(),
+            enabled: merchant?.enabled !== false,
+            pickupAddress:
+              String(merchant?.pickupAddress || '').trim() || undefined,
+          }))
+        : [],
+    } as any;
+  }
+
+  private toDeliveryMotoboySnapshot(user: any) {
+    if (!user) return null;
+
+    return {
+      id: user.id,
+      name: user.name,
+      phone: user.phone,
+      cityId: user.cityId ?? null,
+      type: user.type ?? UserType.MOTOBOY,
+      profileImage: user.profileImage ?? null,
+      notification: user.notification?.subscriptionId
+        ? { subscriptionId: user.notification.subscriptionId }
+        : null,
+    } as any;
+  }
+
   private normalizeMotoboyId(motoboyId?: string | null) {
     if (motoboyId === undefined || motoboyId === null) {
       return null;
@@ -1658,8 +1611,11 @@ export class DeliveryService implements OnModuleInit {
         clientName,
         clientPhone,
         status: deliveryStatus,
-        establishment,
-        motoboy,
+        establishment: this.toDeliveryEstablishmentSnapshot(establishment),
+        motoboy: this.toDeliveryMotoboySnapshot(motoboy),
+        establishmentId: establishment.id,
+        establishmentCityId: establishment.cityId,
+        motoboyId: motoboy?.id ?? null,
         value,
         payment,
         soda,
@@ -2238,8 +2194,16 @@ export class DeliveryService implements OnModuleInit {
       addressLongitude: data.addressLongitude ?? null,
       addressMapsUrl: data.addressMapsUrl ?? null,
       status: data.status,
-      establishment: data.establishment ?? null,
-      motoboy: data.motoboy ?? null,
+      establishment: this.toDeliveryEstablishmentSnapshot(data.establishment),
+      motoboy: this.toDeliveryMotoboySnapshot(data.motoboy),
+      establishmentId:
+        data.establishment?.id ?? data.establishmentId ?? null,
+      establishmentCityId:
+        data.establishment?.cityId ?? data.establishmentCityId ?? null,
+      motoboyId:
+        data.motoboy === null
+          ? null
+          : data.motoboy?.id ?? data.motoboyId ?? null,
       value: data.value,
       observation: data.observation,
       destinationObservation: data.destinationObservation ?? null,
@@ -2258,6 +2222,11 @@ export class DeliveryService implements OnModuleInit {
       ifoodStatus: data.ifoodStatus ?? null,
       externalStatus: data.externalStatus ?? null,
       logisticsStatus: data.logisticsStatus ?? null,
+      ifoodOrderId: data.ifoodOrderId ?? null,
+      ifoodDisplayId: data.ifoodDisplayId ?? null,
+      orderLocator: data.orderLocator ?? null,
+      ifoodMerchantId: data.ifoodMerchantId ?? null,
+      ifoodMerchantName: data.ifoodMerchantName ?? null,
       ifoodImportedAt: data.ifoodImportedAt ?? null,
       ifoodLastEventCode: data.ifoodLastEventCode ?? null,
       ifoodLastEventFullCode: data.ifoodLastEventFullCode ?? null,
@@ -2359,6 +2328,7 @@ export class DeliveryService implements OnModuleInit {
         $set: {
           status: StatusDelivery.PENDING,
           motoboy: null,
+          motoboyId: null,
           onCoursedAt: null,
           ifoodAssignDriverSynced: false,
           ifoodGoingToOriginSynced: false,
@@ -2404,7 +2374,7 @@ export class DeliveryService implements OnModuleInit {
         id: deliveryFinded.id,
         isActive: true,
         status: StatusDelivery.PENDING,
-        $or: [{ motoboy: null }, { motoboy: { $exists: false } }],
+        motoboyId: null,
       } as any,
       {
         $set: claimPayload,

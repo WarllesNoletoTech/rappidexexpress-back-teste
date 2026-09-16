@@ -1,11 +1,11 @@
+import { PostgresCompatRepository } from '../database/postgres-compat.repository';
 import {
   Injectable,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { ObjectId } from 'mongodb';
-import { MongoRepository } from 'typeorm';
+import { v4 as uuid } from 'uuid';
 
 import { CityEntity } from '../database/entities/city.entity';
 import { UserType } from '../shared/constants/enums.constants';
@@ -16,7 +16,7 @@ import { CityResult, CreateCityDto, UpdateCityDto } from './dto';
 export class CityService {
   constructor(
     @InjectRepository(CityEntity)
-    private readonly cityRepository: MongoRepository<CityEntity>,
+    private readonly cityRepository: PostgresCompatRepository<CityEntity>,
   ) {}
 
   private normalizeCurrencyValue(value?: number | string): number | undefined {
@@ -57,12 +57,12 @@ export class CityService {
     ].includes(user.type as UserType);
 
     if (shouldReturnOnlyUserCity) {
-      if (!user.cityId || !ObjectId.isValid(user.cityId)) {
+      if (!user.cityId) {
         return [];
       }
 
       const city = await this.cityRepository.findOne({
-        where: { _id: new ObjectId(user.cityId) },
+        where: { id: user.cityId },
       });
 
       return city ? [CityResult.fromEntity(city)] : [];
@@ -82,6 +82,7 @@ export class CityService {
 
   async createCity(data: CreateCityDto): Promise<CityResult> {
     const city = await this.cityRepository.save({
+      id: uuid(),
       name: data.name,
       state: data.state,
       clientWhatsappMessage: data.clientWhatsappMessage?.trim() || '',
@@ -99,7 +100,7 @@ export class CityService {
 
   async findCity(cityId: string, user: UserRequest): Promise<CityResult> {
     const city = await this.cityRepository.findOne({
-      where: { _id: new ObjectId(cityId) },
+      where: { id: cityId },
     });
 
     if (!city) {
@@ -117,7 +118,7 @@ export class CityService {
     user: UserRequest,
   ): Promise<CityResult> {
     const city = await this.cityRepository.findOne({
-      where: { _id: new ObjectId(cityId) },
+      where: { id: cityId },
     });
 
     if (!city) {
@@ -165,7 +166,7 @@ export class CityService {
 
   async deleteCity(cityId: string): Promise<void> {
     const city = await this.cityRepository.findOne({
-      where: { _id: new ObjectId(cityId) },
+      where: { id: cityId },
     });
 
     if (!city) {
