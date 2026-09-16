@@ -23,16 +23,16 @@ export class IfoodCreditHistoryEntity {
   @Column({ type: 'varchar' })
   operationType: IfoodCreditOperationType;
 
-  @Column({ type: 'bigint', transformer: bigintNumberTransformer })
+  @Column({ type: 'numeric', transformer: bigintNumberTransformer })
   amount: number;
 
-  @Column({ type: 'bigint', transformer: bigintNumberTransformer })
+  @Column({ type: 'numeric', transformer: bigintNumberTransformer })
   releasedAfterOperation: number;
 
-  @Column({ type: 'bigint', transformer: bigintNumberTransformer })
+  @Column({ type: 'numeric', transformer: bigintNumberTransformer })
   usedAfterOperation: number;
 
-  @Column({ type: 'bigint', transformer: bigintNumberTransformer })
+  @Column({ type: 'numeric', transformer: bigintNumberTransformer })
   availableAfterOperation: number;
 
   @Column({ nullable: true })

@@ -43,9 +43,9 @@ CREATE TABLE IF NOT EXISTS "user_entity" (
   "ifoodMerchants" jsonb,
   "ifoodClientId" text,
   "ifoodClientSecret" text,
-  "ifoodOrdersReleased" bigint NOT NULL DEFAULT 0,
-  "ifoodOrdersUsed" bigint NOT NULL DEFAULT 0,
-  "ifoodOrdersAvailable" bigint NOT NULL DEFAULT 0,
+  "ifoodOrdersReleased" numeric NOT NULL DEFAULT 0,
+  "ifoodOrdersUsed" numeric NOT NULL DEFAULT 0,
+  "ifoodOrdersAvailable" numeric NOT NULL DEFAULT 0,
   "createdAt" timestamptz NOT NULL DEFAULT now(),
   "createdBy" varchar,
   "updatedAt" timestamptz NOT NULL DEFAULT now()
@@ -150,10 +150,10 @@ CREATE TABLE IF NOT EXISTS "ifood_credit_history_entity" (
   "id" varchar(64) NOT NULL,
   "companyId" varchar(64) NOT NULL,
   "operationType" varchar NOT NULL,
-  "amount" bigint NOT NULL,
-  "releasedAfterOperation" bigint NOT NULL,
-  "usedAfterOperation" bigint NOT NULL,
-  "availableAfterOperation" bigint NOT NULL,
+  "amount" numeric NOT NULL,
+  "releasedAfterOperation" numeric NOT NULL,
+  "usedAfterOperation" numeric NOT NULL,
+  "availableAfterOperation" numeric NOT NULL,
   "performedBy" varchar,
   "orderId" varchar,
   "reason" text,
@@ -226,12 +226,12 @@ CREATE INDEX IF NOT EXISTS "IDX_IFOOD_CREDIT_COMPANY_CREATED" ON "ifood_credit_h
 CREATE INDEX IF NOT EXISTS "IDX_FIN_SETTLEMENT_ESTABLISHMENT_PERIOD" ON "financial_settlement_history_entity" ("establishmentId", "periodStart", "periodEnd");
 CREATE INDEX IF NOT EXISTS "IDX_CITY_NAME_STATE" ON "city_entity" ("name", "state");
 ALTER TABLE "user_entity"
-  ALTER COLUMN "ifoodOrdersReleased" TYPE bigint USING "ifoodOrdersReleased"::bigint,
-  ALTER COLUMN "ifoodOrdersUsed" TYPE bigint USING "ifoodOrdersUsed"::bigint,
-  ALTER COLUMN "ifoodOrdersAvailable" TYPE bigint USING "ifoodOrdersAvailable"::bigint;
+  ALTER COLUMN "ifoodOrdersReleased" TYPE numeric USING "ifoodOrdersReleased"::numeric,
+  ALTER COLUMN "ifoodOrdersUsed" TYPE numeric USING "ifoodOrdersUsed"::numeric,
+  ALTER COLUMN "ifoodOrdersAvailable" TYPE numeric USING "ifoodOrdersAvailable"::numeric;
 
 ALTER TABLE "ifood_credit_history_entity"
-  ALTER COLUMN "amount" TYPE bigint USING "amount"::bigint,
-  ALTER COLUMN "releasedAfterOperation" TYPE bigint USING "releasedAfterOperation"::bigint,
-  ALTER COLUMN "usedAfterOperation" TYPE bigint USING "usedAfterOperation"::bigint,
-  ALTER COLUMN "availableAfterOperation" TYPE bigint USING "availableAfterOperation"::bigint;
+  ALTER COLUMN "amount" TYPE numeric USING "amount"::numeric,
+  ALTER COLUMN "releasedAfterOperation" TYPE numeric USING "releasedAfterOperation"::numeric,
+  ALTER COLUMN "usedAfterOperation" TYPE numeric USING "usedAfterOperation"::numeric,
+  ALTER COLUMN "availableAfterOperation" TYPE numeric USING "availableAfterOperation"::numeric;

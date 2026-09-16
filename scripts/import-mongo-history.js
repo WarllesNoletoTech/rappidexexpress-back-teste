@@ -59,11 +59,37 @@ function toBigIntString(value, fallback = '0') {
   if (value === undefined || value === null || value === '') return fallback;
   if (value instanceof Decimal128) value = value.toString();
   if (typeof value === 'bigint') return value.toString();
+
   const text = String(value).trim();
-  if (/^-?\d+$/.test(text)) return text;
-  const parsed = Number(text);
-  if (!Number.isFinite(parsed)) return fallback;
-  return String(Math.trunc(parsed));
+  if (/^[+-]?\d+$/.test(text)) return text.replace(/^\+/, '');
+
+  // Converte números decimais / notação científica para inteiro decimal puro.
+  // Ex.: 1e+24 -> 1000000000000000000000000.
+  const match = text.match(/^([+-]?)(\d+)(?:\.(\d*))?(?:[eE]([+-]?\d+))?$/);
+  if (!match) return fallback;
+
+  const sign = match[1] === '-' ? '-' : '';
+  const integerPart = match[2] || '0';
+  const fractionalPart = match[3] || '';
+  const exponent = Number(match[4] || 0);
+  if (!Number.isFinite(exponent)) return fallback;
+
+  let digits = `${integerPart}${fractionalPart}`;
+  let decimalPosition = integerPart.length + exponent;
+
+  if (decimalPosition <= 0) {
+    return '0';
+  }
+
+  if (decimalPosition < digits.length) {
+    // Contadores são inteiros; truncamos apenas a parte fracionária.
+    digits = digits.slice(0, decimalPosition);
+  } else if (decimalPosition > digits.length) {
+    digits += '0'.repeat(decimalPosition - digits.length);
+  }
+
+  digits = digits.replace(/^0+(?=\d)/, '') || '0';
+  return digits === '0' ? '0' : `${sign}${digits}`;
 }
 
 function toBool(value, fallback = false) {

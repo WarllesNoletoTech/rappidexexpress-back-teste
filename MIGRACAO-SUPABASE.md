@@ -177,3 +177,7 @@ npm run list:shopkeepers
 ## Rollback
 
 O script de migração não apaga nem altera o MongoDB. Se houver um problema no corte, mantenha o Atlas ativo e volte temporariamente para a release anterior do backend. Não delete o banco Mongo durante a primeira fase de produção no Supabase.
+
+
+## Compatibilidade de créditos iFood muito altos
+Os contadores e históricos de créditos iFood usam `numeric(30,0)` no PostgreSQL para preservar valores legados acima do limite de `bigint` (por exemplo, saldos sentinela muito altos).

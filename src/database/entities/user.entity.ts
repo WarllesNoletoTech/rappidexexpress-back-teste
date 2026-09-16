@@ -104,13 +104,13 @@ export class UserEntity {
   @Column({ nullable: true, type: 'text' })
   ifoodClientSecret?: string;
 
-  @Column({ default: 0, type: 'bigint', transformer: bigintNumberTransformer })
+  @Column({ default: 0, type: 'numeric', transformer: bigintNumberTransformer })
   ifoodOrdersReleased: number;
 
-  @Column({ default: 0, type: 'bigint', transformer: bigintNumberTransformer })
+  @Column({ default: 0, type: 'numeric', transformer: bigintNumberTransformer })
   ifoodOrdersUsed: number;
 
-  @Column({ default: 0, type: 'bigint', transformer: bigintNumberTransformer })
+  @Column({ default: 0, type: 'numeric', transformer: bigintNumberTransformer })
   ifoodOrdersAvailable: number;
 
   @Column({ type: 'timestamptz' })
