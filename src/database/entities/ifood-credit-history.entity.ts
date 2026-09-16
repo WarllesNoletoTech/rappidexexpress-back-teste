@@ -1,5 +1,10 @@
 import { Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 
+const bigintNumberTransformer = {
+  to: (value?: number | string | null) => value ?? 0,
+  from: (value?: number | string | null) => Number(value ?? 0),
+};
+
 export type IfoodCreditOperationType = 'ADD' | 'REMOVE' | 'CONSUME' | 'REFUND';
 
 @Entity()
@@ -18,16 +23,16 @@ export class IfoodCreditHistoryEntity {
   @Column({ type: 'varchar' })
   operationType: IfoodCreditOperationType;
 
-  @Column({ type: 'integer' })
+  @Column({ type: 'bigint', transformer: bigintNumberTransformer })
   amount: number;
 
-  @Column({ type: 'integer' })
+  @Column({ type: 'bigint', transformer: bigintNumberTransformer })
   releasedAfterOperation: number;
 
-  @Column({ type: 'integer' })
+  @Column({ type: 'bigint', transformer: bigintNumberTransformer })
   usedAfterOperation: number;
 
-  @Column({ type: 'integer' })
+  @Column({ type: 'bigint', transformer: bigintNumberTransformer })
   availableAfterOperation: number;
 
   @Column({ nullable: true })

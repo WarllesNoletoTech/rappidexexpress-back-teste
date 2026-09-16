@@ -1,6 +1,11 @@
 import { Column, Entity, Index, PrimaryGeneratedColumn } from 'typeorm';
 import { Permissions, UserType } from '../../shared/constants/enums.constants';
 
+const bigintNumberTransformer = {
+  to: (value?: number | string | null) => value ?? 0,
+  from: (value?: number | string | null) => Number(value ?? 0),
+};
+
 export type IfoodMerchantConfig = {
   merchantId: string;
   name: string;
@@ -99,13 +104,13 @@ export class UserEntity {
   @Column({ nullable: true, type: 'text' })
   ifoodClientSecret?: string;
 
-  @Column({ default: 0, type: 'integer' })
+  @Column({ default: 0, type: 'bigint', transformer: bigintNumberTransformer })
   ifoodOrdersReleased: number;
 
-  @Column({ default: 0, type: 'integer' })
+  @Column({ default: 0, type: 'bigint', transformer: bigintNumberTransformer })
   ifoodOrdersUsed: number;
 
-  @Column({ default: 0, type: 'integer' })
+  @Column({ default: 0, type: 'bigint', transformer: bigintNumberTransformer })
   ifoodOrdersAvailable: number;
 
   @Column({ type: 'timestamptz' })
