@@ -43,6 +43,29 @@ function mongoId(value) {
   return String(value);
 }
 
+function nonBlank(value) {
+  if (value === undefined || value === null) return null;
+  const text = String(value).trim();
+  return text || null;
+}
+
+function sourceDocumentIds(document) {
+  return Array.from(
+    new Set(
+      [nonBlank(document?.id), mongoId(document?._id)]
+        .filter(Boolean)
+        .map(String),
+    ),
+  );
+}
+
+function mapAliases(idMap, aliases, mappedId) {
+  if (!mappedId) return;
+  for (const alias of aliases || []) {
+    if (alias) idMap.set(String(alias), String(mappedId));
+  }
+}
+
 function toDate(value, fallback = null) {
   if (!value) return fallback;
   const date = value instanceof Date ? value : new Date(value);
@@ -252,11 +275,15 @@ async function prepareCityMerge(db, pg, collectionName) {
 
   const source = await db.collection(collectionName).find({}).toArray();
   for (const d of source) {
-    const sourceId = mongoId(d._id || d.id);
+    // Prefere o ID lógico usado pelo Rappidex. O _id do Mongo fica como alias
+    // para cobrir versões antigas que armazenavam a referência de outra forma.
+    const aliases = sourceDocumentIds(d);
+    const sourceId = nonBlank(d.id) || mongoId(d._id);
     if (!sourceId) continue;
 
-    if (byId.has(sourceId)) {
-      idMap.set(sourceId, sourceId);
+    const sameId = aliases.map((alias) => byId.get(alias)).find(Boolean);
+    if (sameId) {
+      mapAliases(idMap, aliases, String(sameId.id));
       matchedById += 1;
       continue;
     }
@@ -264,12 +291,12 @@ async function prepareCityMerge(db, pg, collectionName) {
     const key = cityKey(d.name, d.state);
     const sameCity = byKey.get(key);
     if (sameCity) {
-      idMap.set(sourceId, String(sameCity.id));
+      mapAliases(idMap, aliases, String(sameCity.id));
       matchedByNameState += 1;
       continue;
     }
 
-    idMap.set(sourceId, sourceId);
+    mapAliases(idMap, aliases, sourceId);
     const row = {
       id: sourceId,
       name: String(d.name || 'Cidade'),
@@ -315,27 +342,29 @@ async function prepareUserMerge(db, pg, collectionName, cityIdMap) {
 
   const source = await db.collection(collectionName).find({}).toArray();
   for (const d of source) {
-    const sourceId = d.id ? String(d.id) : null;
+    const aliases = sourceDocumentIds(d);
+    const sourceId = nonBlank(d.id) || mongoId(d._id);
     const username = String(d.user || '').trim();
     if (!sourceId || !username || !d.password) {
       invalid += 1;
       continue;
     }
 
-    if (byId.has(sourceId)) {
-      idMap.set(sourceId, sourceId);
+    const sameId = aliases.map((alias) => byId.get(alias)).find(Boolean);
+    if (sameId) {
+      mapAliases(idMap, aliases, String(sameId.id));
       matchedById += 1;
       continue;
     }
 
     const sameUser = byUsername.get(normalizeKey(username));
     if (sameUser) {
-      idMap.set(sourceId, String(sameUser.id));
+      mapAliases(idMap, aliases, String(sameUser.id));
       matchedByUsername += 1;
       continue;
     }
 
-    idMap.set(sourceId, sourceId);
+    mapAliases(idMap, aliases, sourceId);
     const sourceCityId = d.cityId ? String(d.cityId) : null;
     const mappedCityId = sourceCityId ? (cityIdMap.get(sourceCityId) || sourceCityId) : null;
     const row = {
@@ -486,6 +515,14 @@ async function main() {
     };
 
     const sourceDeliveryIds = new Set();
+    const deliveryDiagnostics = {
+      idRecoveredFromMongoObjectId: 0,
+      establishmentRecoveredFromScalarId: 0,
+      establishmentKeptAsLegacyReference: 0,
+      motoboyKeptAsLegacyReference: 0,
+      missingDeliveryId: 0,
+      missingEstablishmentId: 0,
+    };
     results.deliveries = await importCursor({
       db,
       pg,
@@ -505,21 +542,83 @@ async function main() {
       targetKnownKeys: targetState.deliveryIds,
       keyOfRow: (r) => String(r.id),
       mapper: (d) => {
-        if (!d.id || !d.establishment?.id) return null;
-        const sourceEstablishmentId = String(d.establishment.id);
-        const mappedEstablishmentId = userMerge.idMap.get(sourceEstablishmentId);
-        if (!mappedEstablishmentId) return null;
+        const deliveryId = nonBlank(d.id) || mongoId(d._id);
+        if (!deliveryId) {
+          deliveryDiagnostics.missingDeliveryId += 1;
+          return null;
+        }
+        if (!nonBlank(d.id) && mongoId(d._id)) {
+          deliveryDiagnostics.idRecoveredFromMongoObjectId += 1;
+        }
 
-        const sourceCityId = d.establishment.cityId ? String(d.establishment.cityId) : null;
+        // O snapshot da entrega é a fonte histórica. Não exigimos que a empresa
+        // ainda exista em user_entity: não há FK e isso evita perder entregas de
+        // lojas antigas/excluídas. Também aceitamos o establishmentId escalar de
+        // versões intermediárias do backend.
+        let sourceEstablishmentId = nonBlank(d.establishment?.id);
+        if (!sourceEstablishmentId && nonBlank(d.establishmentId)) {
+          sourceEstablishmentId = nonBlank(d.establishmentId);
+          deliveryDiagnostics.establishmentRecoveredFromScalarId += 1;
+        }
+        if (!sourceEstablishmentId) {
+          deliveryDiagnostics.missingEstablishmentId += 1;
+          return null;
+        }
+
+        const mappedEstablishmentId =
+          userMerge.idMap.get(sourceEstablishmentId) || sourceEstablishmentId;
+        if (!userMerge.idMap.has(sourceEstablishmentId)) {
+          deliveryDiagnostics.establishmentKeptAsLegacyReference += 1;
+        }
+
+        const sourceCityId = d.establishment?.cityId
+          ? String(d.establishment.cityId)
+          : (d.establishmentCityId ? String(d.establishmentCityId) : null);
         const mappedCityId = sourceCityId ? (cityMerge.idMap.get(sourceCityId) || sourceCityId) : null;
-        const sourceMotoboyId = d.motoboy?.id ? String(d.motoboy.id) : null;
-        const mappedMotoboyId = sourceMotoboyId ? (userMerge.idMap.get(sourceMotoboyId) || null) : null;
+        const sourceMotoboyId = d.motoboy?.id
+          ? String(d.motoboy.id)
+          : (d.motoboyId ? String(d.motoboyId) : null);
+        const mappedMotoboyId = sourceMotoboyId
+          ? (userMerge.idMap.get(sourceMotoboyId) || sourceMotoboyId)
+          : null;
+        if (sourceMotoboyId && !userMerge.idMap.has(sourceMotoboyId)) {
+          deliveryDiagnostics.motoboyKeptAsLegacyReference += 1;
+        }
         const motoboyCityId = d.motoboy?.cityId ? String(d.motoboy.cityId) : null;
         const mappedMotoboyCityId = motoboyCityId ? (cityMerge.idMap.get(motoboyCityId) || motoboyCityId) : null;
 
-        sourceDeliveryIds.add(String(d.id));
+        const establishmentSnapshot = d.establishment
+          ? compactEstablishment(d.establishment, mappedEstablishmentId, mappedCityId)
+          : {
+              id: mappedEstablishmentId,
+              name: String(d.establishmentName || d.ifoodMerchantName || 'Estabelecimento legado'),
+              phone: String(d.establishmentPhone || ''),
+              profileImage: null,
+              location: null,
+              pix: null,
+              cityId: mappedCityId,
+              cityName: d.cityName ?? null,
+              notification: null,
+              usesExternalIfoodPdv: false,
+              ifoodMerchants: [],
+            };
+        const motoboySnapshot = d.motoboy
+          ? compactMotoboy(d.motoboy, mappedMotoboyId, mappedMotoboyCityId)
+          : (mappedMotoboyId
+              ? {
+                  id: mappedMotoboyId,
+                  name: String(d.motoboyName || ''),
+                  phone: String(d.motoboyPhone || ''),
+                  cityId: mappedMotoboyCityId,
+                  type: 'motoboy',
+                  profileImage: null,
+                  notification: null,
+                }
+              : null);
+
+        sourceDeliveryIds.add(String(deliveryId));
         return {
-          id: String(d.id),
+          id: String(deliveryId),
           clientName: String(d.clientName || ''),
           clientPhone: String(d.clientPhone || ''),
           clientLocation: d.clientLocation ?? null,
@@ -534,8 +633,8 @@ async function main() {
           addressLongitude: d.addressLongitude == null ? null : toNumber(d.addressLongitude),
           addressMapsUrl: d.addressMapsUrl ?? null,
           status: String(d.status || 'PENDENTE'),
-          establishment: compactEstablishment(d.establishment, mappedEstablishmentId, mappedCityId),
-          motoboy: d.motoboy ? compactMotoboy(d.motoboy, mappedMotoboyId, mappedMotoboyCityId) : null,
+          establishment: establishmentSnapshot,
+          motoboy: motoboySnapshot,
           establishmentId: mappedEstablishmentId,
           establishmentCityId: mappedCityId,
           motoboyId: mappedMotoboyId,
@@ -576,7 +675,9 @@ async function main() {
         };
       },
     });
+    results.deliveries.diagnostics = deliveryDiagnostics;
 
+    const ifoodLinkDiagnostics = { legacyShopkeeperReference: 0, missingRequiredFields: 0 };
     results.ifoodLinks = await importCursor({
       db,
       pg,
@@ -586,9 +687,15 @@ async function main() {
       targetKnownKeys: targetState.linkKeys,
       keyOfRow: (r) => `${r.ifoodOrderId}|${r.merchantId}`,
       mapper: (d) => {
-        if (!d.ifoodOrderId || !d.merchantId || !d.deliveryId || !d.shopkeeperId) return null;
-        const mappedShopkeeperId = userMerge.idMap.get(String(d.shopkeeperId));
-        if (!mappedShopkeeperId) return null;
+        if (!d.ifoodOrderId || !d.merchantId || !d.deliveryId || !d.shopkeeperId) {
+          ifoodLinkDiagnostics.missingRequiredFields += 1;
+          return null;
+        }
+        const sourceShopkeeperId = String(d.shopkeeperId);
+        const mappedShopkeeperId = userMerge.idMap.get(sourceShopkeeperId) || sourceShopkeeperId;
+        if (!userMerge.idMap.has(sourceShopkeeperId)) {
+          ifoodLinkDiagnostics.legacyShopkeeperReference += 1;
+        }
         return {
           ifoodOrderId: String(d.ifoodOrderId),
           ifoodDisplayId: d.ifoodDisplayId ?? null,
@@ -600,7 +707,9 @@ async function main() {
         };
       },
     });
+    results.ifoodLinks.diagnostics = ifoodLinkDiagnostics;
 
+    const ifoodCreditDiagnostics = { legacyCompanyReference: 0, missingRequiredFields: 0 };
     results.ifoodCredits = await importCursor({
       db,
       pg,
@@ -611,9 +720,15 @@ async function main() {
       keyOfRow: (r) => String(r.id),
       mapper: (d) => {
         const id = d.id || mongoId(d._id);
-        if (!id || !d.companyId) return null;
-        const mappedCompanyId = userMerge.idMap.get(String(d.companyId));
-        if (!mappedCompanyId) return null;
+        if (!id || !d.companyId) {
+          ifoodCreditDiagnostics.missingRequiredFields += 1;
+          return null;
+        }
+        const sourceCompanyId = String(d.companyId);
+        const mappedCompanyId = userMerge.idMap.get(sourceCompanyId) || sourceCompanyId;
+        if (!userMerge.idMap.has(sourceCompanyId)) {
+          ifoodCreditDiagnostics.legacyCompanyReference += 1;
+        }
         const sourcePerformedBy = d.performedBy ? String(d.performedBy) : null;
         return {
           id: String(id),
@@ -630,7 +745,9 @@ async function main() {
         };
       },
     });
+    results.ifoodCredits.diagnostics = ifoodCreditDiagnostics;
 
+    const settlementDiagnostics = { legacyEstablishmentReference: 0, missingEstablishmentId: 0 };
     results.settlements = await importCursor({
       db,
       pg,
@@ -640,9 +757,15 @@ async function main() {
       targetKnownKeys: targetState.settlementIds,
       keyOfRow: (r) => String(r.legacyMongoId),
       mapper: (d) => {
-        if (!d.establishmentId) return null;
-        const mappedEstablishmentId = userMerge.idMap.get(String(d.establishmentId));
-        if (!mappedEstablishmentId) return null;
+        if (!d.establishmentId) {
+          settlementDiagnostics.missingEstablishmentId += 1;
+          return null;
+        }
+        const sourceEstablishmentId = String(d.establishmentId);
+        const mappedEstablishmentId = userMerge.idMap.get(sourceEstablishmentId) || sourceEstablishmentId;
+        if (!userMerge.idMap.has(sourceEstablishmentId)) {
+          settlementDiagnostics.legacyEstablishmentReference += 1;
+        }
         const sourceCityId = d.cityId ? String(d.cityId) : null;
         return {
           legacyMongoId: mongoId(d._id),
@@ -668,6 +791,7 @@ async function main() {
         };
       },
     });
+    results.settlements.diagnostics = settlementDiagnostics;
 
     if (FULL) {
       results.logs = await importCursor({

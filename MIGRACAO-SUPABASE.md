@@ -181,3 +181,15 @@ O script de migração não apaga nem altera o MongoDB. Se houver um problema no
 
 ## Compatibilidade de créditos iFood muito altos
 Os contadores e históricos de créditos iFood usam `numeric(30,0)` no PostgreSQL para preservar valores legados acima do limite de `bigint` (por exemplo, saldos sentinela muito altos).
+
+## Importação de histórico em banco Supabase já em uso (v4)
+
+Se o Rappidex já estiver gravando dados no Supabase, **não use o migrador destrutivo/UPSERT como etapa de histórico**. Use o importador MERGE:
+
+```powershell
+npm run import:mongo-history
+npm run import:mongo-history:apply
+npm run db:verify
+```
+
+A v4 preserva snapshots de entregas de empresas/motoboys antigos mesmo que esses usuários já tenham sido removidos do cadastro atual. O dry-run exibe `diagnostics` para separar referências legadas recuperadas de registros realmente sem dados mínimos.

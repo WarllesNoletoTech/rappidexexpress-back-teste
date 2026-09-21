@@ -2,14 +2,22 @@
 
 Este projeto inclui um importador em modo **MERGE**. Ele foi feito para o cenário em que o Rappidex já está funcionando no Supabase/PostgreSQL e você quer trazer o histórico do MongoDB antigo **sem apagar nem sobrescrever os dados novos**.
 
+
+### Ajustes da v4
+
+Esta versão foi reforçada para bases antigas do Rappidex: prefere os IDs lógicos usados pelo sistema, mantém `_id` do Mongo como alias de compatibilidade e evita descartar histórico apenas porque a empresa/motoboy antigo já foi removido do cadastro atual.
+
 ## O que o importador preserva
 
 - Não apaga nenhuma linha do Supabase.
 - Não sobrescreve usuários, cidades, entregas ou vínculos que já existem no Supabase.
 - Se uma cidade antiga tiver o mesmo nome + UF de uma cidade já criada no Supabase, reutiliza a cidade atual e remapeia o histórico para ela.
 - Se um usuário antigo tiver o mesmo login de um usuário que já existe, preserva o usuário atual e remapeia o histórico para o ID atual.
-- Ignora entregas antigas inválidas sem `id` ou sem estabelecimento válido.
-- Campos de créditos iFood usam `BIGINT`, inclusive valores antigos grandes como `1000000000000000000`.
+- Preserva entregas de estabelecimentos e motoboys antigos mesmo quando o usuário correspondente já não existe em `user_entity`; o snapshot histórico da própria entrega é mantido.
+- Se uma entrega antiga não tiver o `id` lógico, usa o `_id` do MongoDB como identificador de recuperação.
+- Aceita `establishmentId` escalar de versões antigas quando o snapshot `establishment.id` estiver ausente.
+- Só ignora uma entrega quando não existe nenhum identificador recuperável da entrega ou nenhum identificador recuperável do estabelecimento.
+- Campos de créditos iFood usam `NUMERIC`, inclusive valores antigos grandes como `1000000000000000000`.
 
 ## Por padrão: histórico principal
 
@@ -49,7 +57,7 @@ npm run import:mongo-history
 
 Esse comando consulta os dois bancos e mostra o planejamento do merge, mas **não grava nada no Supabase**.
 
-Ele informa quantas cidades e usuários serão reaproveitados, quantos registros são candidatos à importação e quantos registros inválidos serão ignorados.
+Ele informa quantas cidades e usuários serão reaproveitados, quantos registros são candidatos à importação e quantos registros realmente não possuem dados mínimos para recuperação. A seção `diagnostics` também mostra quantas referências legadas foram preservadas sem exigir que a empresa/motoboy antigo ainda exista como usuário ativo.
 
 ## 3. Importar o histórico principal
 
@@ -69,9 +77,13 @@ npm run db:verify
 
 Confira especialmente:
 
-- usuários duplicados = 0
-- entregas sem estabelecimento correspondente = 0
-- divergência de `establishmentId` = 0
+- usuários duplicados = 0;
+- **entregas órfãs ativas/não finalizadas = 0**;
+- divergência de `establishmentId` com o snapshot = 0;
+- divergência de `motoboyId` com o snapshot = 0;
+- vínculos iFood apontando para entrega inexistente = 0.
+
+É normal existirem **referências históricas** para estabelecimentos ou motoboys que já foram excluídos da tabela de usuários. A v4 preserva essas referências porque elas fazem parte do histórico e não existe FK obrigando o usuário antigo a continuar cadastrado. O que não deve existir no corte final é entrega órfã ainda ativa/não finalizada.
 
 ## 5. Importar também logs e eventos brutos do iFood (opcional)
 

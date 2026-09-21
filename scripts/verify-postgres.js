@@ -28,6 +28,20 @@ async function main() {
     const orphanDeliveries = await pg.query(
       'SELECT COUNT(*)::int AS count FROM "delivery_entity" d LEFT JOIN "user_entity" u ON u."id" = d."establishmentId" WHERE u."id" IS NULL',
     );
+    const activeOrphanDeliveries = await pg.query(
+      `SELECT COUNT(*)::int AS count
+       FROM "delivery_entity" d
+       LEFT JOIN "user_entity" u ON u."id" = d."establishmentId"
+       WHERE u."id" IS NULL
+         AND d."isActive" = true
+         AND d."status" NOT IN ('FINALIZADO', 'CANCELADO')`,
+    );
+    const orphanMotoboys = await pg.query(
+      `SELECT COUNT(*)::int AS count
+       FROM "delivery_entity" d
+       LEFT JOIN "user_entity" u ON u."id" = d."motoboyId"
+       WHERE d."motoboyId" IS NOT NULL AND u."id" IS NULL`,
+    );
     const establishmentSnapshotMismatch = await pg.query(
       `SELECT COUNT(*)::int AS count
        FROM "delivery_entity"
@@ -38,10 +52,27 @@ async function main() {
        FROM "delivery_entity"
        WHERE COALESCE("motoboy"->>'id', '') <> COALESCE("motoboyId", '')`,
     );
+    const orphanIfoodLinks = await pg.query(
+      `SELECT COUNT(*)::int AS count
+       FROM "ifood_order_link_entity" l
+       LEFT JOIN "delivery_entity" d ON d."id" = l."deliveryId"
+       WHERE d."id" IS NULL`,
+    );
+
     console.log(`Usuários duplicados: ${duplicateUsers.rowCount}`);
-    console.log(`Entregas sem estabelecimento correspondente: ${orphanDeliveries.rows[0].count}`);
+    console.log(`Entregas históricas cujo estabelecimento não existe mais em user_entity: ${orphanDeliveries.rows[0].count}`);
+    console.log(`ATENÇÃO - entregas órfãs ainda ativas/não finalizadas: ${activeOrphanDeliveries.rows[0].count}`);
+    console.log(`Entregas com motoboy histórico que não existe mais em user_entity: ${orphanMotoboys.rows[0].count}`);
     console.log(`Entregas com establishmentId divergente do snapshot: ${establishmentSnapshotMismatch.rows[0].count}`);
     console.log(`Entregas com motoboyId divergente do snapshot: ${motoboySnapshotMismatch.rows[0].count}`);
+    console.log(`Vínculos iFood apontando para entrega inexistente: ${orphanIfoodLinks.rows[0].count}`);
+
+    if (activeOrphanDeliveries.rows[0].count > 0) {
+      console.log('\nHá entregas órfãs ativas/não finalizadas. Revise-as antes do corte definitivo.');
+    }
+    if (establishmentSnapshotMismatch.rows[0].count > 0 || motoboySnapshotMismatch.rows[0].count > 0) {
+      console.log('\nHá divergência entre colunas indexadas e snapshots JSONB. Não faça o corte definitivo até corrigir.');
+    }
   } finally {
     await pg.end();
   }
