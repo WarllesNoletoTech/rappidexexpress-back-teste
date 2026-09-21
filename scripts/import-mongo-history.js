@@ -44,6 +44,16 @@ function mongoId(value) {
   return String(value);
 }
 
+function mongoObjectIdDate(value) {
+  if (!value) return null;
+  try {
+    if (value instanceof ObjectId) return value.getTimestamp();
+    const text = String(value);
+    if (/^[0-9a-fA-F]{24}$/.test(text)) return new ObjectId(text).getTimestamp();
+  } catch (_) {}
+  return null;
+}
+
 function nonBlank(value) {
   if (value === undefined || value === null) return null;
   const text = String(value).trim();
@@ -565,6 +575,9 @@ async function main() {
       motoboyKeptAsLegacyReference: 0,
       missingDeliveryId: 0,
       missingEstablishmentId: 0,
+      missingIsActiveForcedInactive: 0,
+      missingStatusForcedInactive: 0,
+      createdAtRecoveredFromMongoObjectId: 0,
     };
     results.deliveries = await importCursor({
       db,
@@ -660,6 +673,21 @@ async function main() {
                 }
               : null);
 
+        const objectIdCreatedAt = mongoObjectIdDate(d._id);
+        const sourceCreatedAt = toDate(d.createdAt, objectIdCreatedAt || new Date(0));
+        const sourceStatus = nonBlank(d.status);
+        const sourceHasIsActive = d.isActive !== undefined && d.isActive !== null;
+        const sourceIsActive = d.isActive === true;
+
+        // Replicar a semântica do Mongo em produção: filtros com isActive=true
+        // não incluem documentos legados onde o campo não existe.
+        if (!sourceHasIsActive) deliveryDiagnostics.missingIsActiveForcedInactive += 1;
+        // Um status ausente não pode virar uma entrega PENDENTE visível após a migração.
+        if (!sourceStatus) deliveryDiagnostics.missingStatusForcedInactive += 1;
+        if (!d.createdAt && objectIdCreatedAt) {
+          deliveryDiagnostics.createdAtRecoveredFromMongoObjectId += 1;
+        }
+
         sourceDeliveryIds.add(String(deliveryId));
         return {
           id: String(deliveryId),
@@ -676,7 +704,7 @@ async function main() {
           addressLatitude: d.addressLatitude == null ? null : toNumber(d.addressLatitude),
           addressLongitude: d.addressLongitude == null ? null : toNumber(d.addressLongitude),
           addressMapsUrl: d.addressMapsUrl ?? null,
-          status: String(d.status || 'PENDENTE'),
+          status: String(sourceStatus || 'PENDENTE'),
           establishment: establishmentSnapshot,
           motoboy: motoboySnapshot,
           establishmentId: mappedEstablishmentId,
@@ -688,10 +716,12 @@ async function main() {
           destinationObservationConfirmed: toBool(d.destinationObservationConfirmed, false),
           soda: d.soda ?? '',
           payment: String(d.payment || 'PAGO'),
-          isActive: toBool(d.isActive, true),
-          createdAt: toDate(d.createdAt, new Date()),
+          // Campo ausente no Mongo permanece fora das filas ativas no PostgreSQL.
+          // Se o status também estiver ausente, o registro fica histórico/inativo.
+          isActive: sourceHasIsActive && sourceStatus ? sourceIsActive : false,
+          createdAt: sourceCreatedAt,
           createdBy: d.createdBy ?? null,
-          updatedAt: toDate(d.updatedAt, toDate(d.createdAt, new Date())),
+          updatedAt: toDate(d.updatedAt, sourceCreatedAt),
           onCoursedAt: toDate(d.onCoursedAt),
           collectedAt: toDate(d.collectedAt),
           arrivedAtStoreAt: toDate(d.arrivedAtStoreAt),
