@@ -8,6 +8,7 @@ const { MongoClient, ObjectId, Decimal128 } = require('mongodb');
 const { Client } = require('pg');
 
 const APPLY = process.argv.includes('--apply');
+const FINAL_SYNC = process.argv.includes('--sync-existing') || String(process.env.FINAL_SYNC_EXISTING || '').toLowerCase() === 'true';
 const FULL = process.argv.includes('--full') || String(process.env.IMPORT_HEAVY_HISTORY || '').toLowerCase() === 'true';
 const BATCH_SIZE = Math.max(25, Number(process.env.MIGRATION_BATCH_SIZE || 200));
 const IMPORT_NOTIFICATION_SUBSCRIPTIONS = String(process.env.IMPORT_NOTIFICATION_SUBSCRIPTIONS || '').toLowerCase() === 'true';
@@ -236,6 +237,35 @@ async function insertDoNothing(pg, table, columns, rows) {
   return inserted;
 }
 
+
+async function upsertRows(pg, table, columns, rows, conflictColumns) {
+  if (!rows.length) return 0;
+  let affected = 0;
+  const updateColumns = columns.filter((column) => !conflictColumns.includes(column));
+
+  for (let offset = 0; offset < rows.length; offset += BATCH_SIZE) {
+    const chunk = rows.slice(offset, offset + BATCH_SIZE);
+    const params = [];
+    const valuesSql = chunk.map((row) => {
+      const placeholders = columns.map((column) => {
+        const raw = row[column] === undefined ? null : row[column];
+        const value = raw && typeof raw === 'object' && !(raw instanceof Date)
+          ? JSON.stringify(raw)
+          : raw;
+        params.push(value);
+        return `$${params.length}`;
+      });
+      return `(${placeholders.join(', ')})`;
+    });
+
+    const sql = `INSERT INTO ${quote(table)} (${columns.map(quote).join(', ')}) VALUES ${valuesSql.join(', ')} ON CONFLICT (${conflictColumns.map(quote).join(', ')}) DO UPDATE SET ${updateColumns.map((column) => `${quote(column)} = EXCLUDED.${quote(column)}`).join(', ')} RETURNING 1`;
+    const result = await pg.query(sql, params);
+    affected += result.rowCount || 0;
+  }
+
+  return affected;
+}
+
 async function loadTargetState(pg) {
   const [cities, users, deliveries, links, credits, settlements, logs, events] = await Promise.all([
     pg.query('SELECT "id", "name", "state" FROM "city_entity"'),
@@ -269,47 +299,51 @@ async function prepareCityMerge(db, pg, collectionName) {
   let matchedById = 0;
   let matchedByNameState = 0;
 
+  const buildRow = (d, id) => ({
+    id: String(id),
+    name: String(d.name || 'Cidade'),
+    state: String(d.state || 'PA'),
+    clientWhatsappMessage: d.clientWhatsappMessage ?? '',
+    deliveryValue: d.deliveryValue ?? '',
+    deliveryFeeValue: d.deliveryFeeValue == null ? null : toNumber(d.deliveryFeeValue),
+    monthlyFeeValue: d.monthlyFeeValue == null ? null : toNumber(d.monthlyFeeValue),
+    pixKey: d.pixKey ?? '',
+    adminWhatsapp: d.adminWhatsapp ?? '',
+    whatsappPhoneNumberId: d.whatsappPhoneNumberId ?? '',
+    whatsappCloudToken: d.whatsappCloudToken ?? '',
+  });
+
   if (!collectionName) {
     return { idMap, rowsToInsert, stats: { source: 0, matchedById, matchedByNameState, candidates: 0 } };
   }
 
   const source = await db.collection(collectionName).find({}).toArray();
   for (const d of source) {
-    // Prefere o ID lógico usado pelo Rappidex. O _id do Mongo fica como alias
-    // para cobrir versões antigas que armazenavam a referência de outra forma.
     const aliases = sourceDocumentIds(d);
     const sourceId = nonBlank(d.id) || mongoId(d._id);
     if (!sourceId) continue;
 
     const sameId = aliases.map((alias) => byId.get(alias)).find(Boolean);
     if (sameId) {
-      mapAliases(idMap, aliases, String(sameId.id));
+      const mappedId = String(sameId.id);
+      mapAliases(idMap, aliases, mappedId);
       matchedById += 1;
+      if (FINAL_SYNC) rowsToInsert.push(buildRow(d, mappedId));
       continue;
     }
 
     const key = cityKey(d.name, d.state);
     const sameCity = byKey.get(key);
     if (sameCity) {
-      mapAliases(idMap, aliases, String(sameCity.id));
+      const mappedId = String(sameCity.id);
+      mapAliases(idMap, aliases, mappedId);
       matchedByNameState += 1;
+      if (FINAL_SYNC) rowsToInsert.push(buildRow(d, mappedId));
       continue;
     }
 
     mapAliases(idMap, aliases, sourceId);
-    const row = {
-      id: sourceId,
-      name: String(d.name || 'Cidade'),
-      state: String(d.state || 'PA'),
-      clientWhatsappMessage: d.clientWhatsappMessage ?? '',
-      deliveryValue: d.deliveryValue ?? '',
-      deliveryFeeValue: d.deliveryFeeValue == null ? null : toNumber(d.deliveryFeeValue),
-      monthlyFeeValue: d.monthlyFeeValue == null ? null : toNumber(d.monthlyFeeValue),
-      pixKey: d.pixKey ?? '',
-      adminWhatsapp: d.adminWhatsapp ?? '',
-      whatsappPhoneNumberId: d.whatsappPhoneNumberId ?? '',
-      whatsappCloudToken: d.whatsappCloudToken ?? '',
-    };
+    const row = buildRow(d, sourceId);
     rowsToInsert.push(row);
     byId.set(sourceId, row);
     byKey.set(key, row);
@@ -336,6 +370,46 @@ async function prepareUserMerge(db, pg, collectionName, cityIdMap) {
   let matchedByUsername = 0;
   let invalid = 0;
 
+  const buildRow = (d, id) => {
+    const sourceCityId = d.cityId ? String(d.cityId) : null;
+    const mappedCityId = sourceCityId ? (cityIdMap.get(sourceCityId) || sourceCityId) : null;
+    return {
+      id: String(id),
+      name: String(d.name || ''),
+      phone: String(d.phone || ''),
+      user: String(d.user || '').trim(),
+      password: String(d.password || ''),
+      profileImage: d.profileImage ?? null,
+      location: d.location ?? null,
+      type: String(d.type || 'shopkeeper'),
+      permission: String(d.permission || 'none'),
+      pix: d.pix ?? null,
+      cityId: mappedCityId,
+      isActive: toBool(d.isActive, true),
+      blocked: toBool(d.blocked, false),
+      blockedReason: d.blockedReason ?? null,
+      blockedAt: toDate(d.blockedAt),
+      blockedBySystem: toBool(d.blockedBySystem, false),
+      unblockedAt: toDate(d.unblockedAt),
+      unblockedBy: d.unblockedBy ?? null,
+      notification: IMPORT_NOTIFICATION_SUBSCRIPTIONS ? cleanJson(d.notification) : null,
+      token: null,
+      useIfoodIntegration: toBool(d.useIfoodIntegration, false),
+      usesExternalIfoodPdv: toBool(d.usesExternalIfoodPdv, false),
+      ifoodWithoutPreparationTime: toBool(d.ifoodWithoutPreparationTime, false),
+      ifoodMerchantId: d.ifoodMerchantId ?? null,
+      ifoodMerchants: cleanJson(Array.isArray(d.ifoodMerchants) ? d.ifoodMerchants : []),
+      ifoodClientId: d.ifoodClientId ?? null,
+      ifoodClientSecret: d.ifoodClientSecret ?? null,
+      ifoodOrdersReleased: toBigIntString(d.ifoodOrdersReleased, '0'),
+      ifoodOrdersUsed: toBigIntString(d.ifoodOrdersUsed, '0'),
+      ifoodOrdersAvailable: toBigIntString(d.ifoodOrdersAvailable, '0'),
+      createdAt: toDate(d.createdAt, new Date()),
+      createdBy: d.createdBy ?? null,
+      updatedAt: toDate(d.updatedAt, toDate(d.createdAt, new Date())),
+    };
+  };
+
   if (!collectionName) {
     return { idMap, rowsToInsert, stats: { source: 0, matchedById, matchedByUsername, invalid, candidates: 0 } };
   }
@@ -352,57 +426,24 @@ async function prepareUserMerge(db, pg, collectionName, cityIdMap) {
 
     const sameId = aliases.map((alias) => byId.get(alias)).find(Boolean);
     if (sameId) {
-      mapAliases(idMap, aliases, String(sameId.id));
+      const mappedId = String(sameId.id);
+      mapAliases(idMap, aliases, mappedId);
       matchedById += 1;
+      if (FINAL_SYNC) rowsToInsert.push(buildRow(d, mappedId));
       continue;
     }
 
     const sameUser = byUsername.get(normalizeKey(username));
     if (sameUser) {
-      mapAliases(idMap, aliases, String(sameUser.id));
+      const mappedId = String(sameUser.id);
+      mapAliases(idMap, aliases, mappedId);
       matchedByUsername += 1;
+      if (FINAL_SYNC) rowsToInsert.push(buildRow(d, mappedId));
       continue;
     }
 
     mapAliases(idMap, aliases, sourceId);
-    const sourceCityId = d.cityId ? String(d.cityId) : null;
-    const mappedCityId = sourceCityId ? (cityIdMap.get(sourceCityId) || sourceCityId) : null;
-    const row = {
-      id: sourceId,
-      name: String(d.name || ''),
-      phone: String(d.phone || ''),
-      user: username,
-      password: String(d.password || ''),
-      profileImage: d.profileImage ?? null,
-      location: d.location ?? null,
-      type: String(d.type || 'shopkeeper'),
-      permission: String(d.permission || 'none'),
-      pix: d.pix ?? null,
-      cityId: mappedCityId,
-      isActive: toBool(d.isActive, true),
-      blocked: toBool(d.blocked, false),
-      blockedReason: d.blockedReason ?? null,
-      blockedAt: toDate(d.blockedAt),
-      blockedBySystem: toBool(d.blockedBySystem, false),
-      unblockedAt: toDate(d.unblockedAt),
-      unblockedBy: d.unblockedBy ?? null,
-      notification: IMPORT_NOTIFICATION_SUBSCRIPTIONS ? cleanJson(d.notification) : null,
-      // Tokens JWT/sessão não são migrados: o usuário faz login novamente no banco novo.
-      token: null,
-      useIfoodIntegration: toBool(d.useIfoodIntegration, false),
-      usesExternalIfoodPdv: toBool(d.usesExternalIfoodPdv, false),
-      ifoodWithoutPreparationTime: toBool(d.ifoodWithoutPreparationTime, false),
-      ifoodMerchantId: d.ifoodMerchantId ?? null,
-      ifoodMerchants: cleanJson(Array.isArray(d.ifoodMerchants) ? d.ifoodMerchants : []),
-      ifoodClientId: d.ifoodClientId ?? null,
-      ifoodClientSecret: d.ifoodClientSecret ?? null,
-      ifoodOrdersReleased: toBigIntString(d.ifoodOrdersReleased, '0'),
-      ifoodOrdersUsed: toBigIntString(d.ifoodOrdersUsed, '0'),
-      ifoodOrdersAvailable: toBigIntString(d.ifoodOrdersAvailable, '0'),
-      createdAt: toDate(d.createdAt, new Date()),
-      createdBy: d.createdBy ?? null,
-      updatedAt: toDate(d.updatedAt, toDate(d.createdAt, new Date())),
-    };
+    const row = buildRow(d, sourceId);
     rowsToInsert.push(row);
     byId.set(sourceId, row);
     byUsername.set(normalizeKey(username), row);
@@ -415,7 +456,7 @@ async function prepareUserMerge(db, pg, collectionName, cityIdMap) {
   };
 }
 
-async function importCursor({ db, pg, collectionName, table, columns, mapper, targetKnownKeys, keyOfRow }) {
+async function importCursor({ db, pg, collectionName, table, columns, mapper, targetKnownKeys, keyOfRow, conflictColumns }) {
   if (!collectionName) return { source: 0, candidates: 0, inserted: 0, skippedExisting: 0, skippedInvalid: 0 };
 
   const collection = db.collection(collectionName);
@@ -428,7 +469,9 @@ async function importCursor({ db, pg, collectionName, table, columns, mapper, ta
 
   const flush = async () => {
     if (!buffer.length) return;
-    if (APPLY) inserted += await insertDoNothing(pg, table, columns, buffer);
+    if (APPLY) inserted += FINAL_SYNC
+      ? await upsertRows(pg, table, columns, buffer, conflictColumns)
+      : await insertDoNothing(pg, table, columns, buffer);
     buffer = [];
   };
 
@@ -440,7 +483,7 @@ async function importCursor({ db, pg, collectionName, table, columns, mapper, ta
       continue;
     }
     const key = keyOfRow ? keyOfRow(row) : null;
-    if (key && targetKnownKeys?.has(key)) {
+    if (!FINAL_SYNC && key && targetKnownKeys?.has(key)) {
       skippedExisting += 1;
       continue;
     }
@@ -479,7 +522,7 @@ async function main() {
     const targetState = await loadTargetState(pg);
 
     console.log(`MongoDB origem: ${db.databaseName}`);
-    console.log(`Modo: ${APPLY ? 'APPLY (merge sem sobrescrever dados atuais)' : 'DRY-RUN'}`);
+    console.log(`Modo: ${APPLY ? (FINAL_SYNC ? 'APPLY FINAL (sincroniza e atualiza registros existentes)' : 'APPLY (merge sem sobrescrever dados atuais)') : (FINAL_SYNC ? 'DRY-RUN FINAL' : 'DRY-RUN')}`);
     console.log(`Histórico pesado (logs + eventos iFood): ${FULL ? 'SIM' : 'NÃO'}`);
     console.log('Coleções detectadas:', collections);
 
@@ -507,11 +550,11 @@ async function main() {
     const results = {};
     results.cities = {
       ...cityMerge.stats,
-      inserted: APPLY ? await insertDoNothing(pg, 'city_entity', cityColumns, cityMerge.rowsToInsert) : null,
+      inserted: APPLY ? (FINAL_SYNC ? await upsertRows(pg, 'city_entity', cityColumns, cityMerge.rowsToInsert, ['id']) : await insertDoNothing(pg, 'city_entity', cityColumns, cityMerge.rowsToInsert)) : null,
     };
     results.users = {
       ...userMerge.stats,
-      inserted: APPLY ? await insertDoNothing(pg, 'user_entity', userColumns, userMerge.rowsToInsert) : null,
+      inserted: APPLY ? (FINAL_SYNC ? await upsertRows(pg, 'user_entity', userColumns, userMerge.rowsToInsert, ['id']) : await insertDoNothing(pg, 'user_entity', userColumns, userMerge.rowsToInsert)) : null,
     };
 
     const sourceDeliveryIds = new Set();
@@ -528,6 +571,7 @@ async function main() {
       pg,
       collectionName: collections.deliveries,
       table: 'delivery_entity',
+      conflictColumns: ['id'],
       columns: [
         'id','clientName','clientPhone','clientLocation','clientAddress','addressComplement','addressReference',
         'addressNeighborhood','addressCity','addressState','addressZipCode','addressLatitude','addressLongitude',
@@ -683,6 +727,7 @@ async function main() {
       pg,
       collectionName: collections.ifoodLinks,
       table: 'ifood_order_link_entity',
+      conflictColumns: ['ifoodOrderId', 'merchantId'],
       columns: ['ifoodOrderId','ifoodDisplayId','merchantId','merchantName','deliveryId','shopkeeperId','createdAt'],
       targetKnownKeys: targetState.linkKeys,
       keyOfRow: (r) => `${r.ifoodOrderId}|${r.merchantId}`,
@@ -715,6 +760,7 @@ async function main() {
       pg,
       collectionName: collections.ifoodCredits,
       table: 'ifood_credit_history_entity',
+      conflictColumns: ['id'],
       columns: ['id','companyId','operationType','amount','releasedAfterOperation','usedAfterOperation','availableAfterOperation','performedBy','orderId','reason','createdAt'],
       targetKnownKeys: targetState.creditIds,
       keyOfRow: (r) => String(r.id),
@@ -753,6 +799,7 @@ async function main() {
       pg,
       collectionName: collections.settlements,
       table: 'financial_settlement_history_entity',
+      conflictColumns: ['legacyMongoId'],
       columns: ['legacyMongoId','establishmentId','establishmentName','cityId','cityName','periodStart','periodEnd','deliveriesCount','deliveryFeeValue','total','includeMonthlyFee','monthlyFeeValue','pixKey','whatsappPhone','whatsappAdminPhone','whatsappPhoneNumberId','filename','sentAt','status','errorMessage'],
       targetKnownKeys: targetState.settlementIds,
       keyOfRow: (r) => String(r.legacyMongoId),
@@ -799,6 +846,7 @@ async function main() {
         pg,
         collectionName: collections.logs,
         table: 'log_entity',
+        conflictColumns: ['id'],
         columns: ['id','where','type','error','user','status','createdAt','updatedAt'],
         targetKnownKeys: targetState.logIds,
         keyOfRow: (r) => String(r.id),
@@ -823,6 +871,7 @@ async function main() {
         pg,
         collectionName: collections.ifoodEvents,
         table: 'ifood_event_entity',
+        conflictColumns: ['eventId'],
         columns: ['eventId','orderId','merchantId','code','fullCode','salesChannel','createdAt','processedAt','acknowledged'],
         targetKnownKeys: targetState.eventIds,
         keyOfRow: (r) => String(r.eventId),

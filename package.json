@@ -32,7 +32,9 @@
     "import:mongo-history": "node scripts/import-mongo-history.js",
     "import:mongo-history:apply": "node scripts/import-mongo-history.js --apply",
     "import:mongo-history:full": "node scripts/import-mongo-history.js --full",
-    "import:mongo-history:apply:full": "node scripts/import-mongo-history.js --apply --full"
+    "import:mongo-history:apply:full": "node scripts/import-mongo-history.js --apply --full",
+    "sync:mongo-final": "node scripts/import-mongo-history.js --sync-existing",
+    "sync:mongo-final:apply": "node scripts/import-mongo-history.js --sync-existing --apply"
   },
   "dependencies": {
     "@nestjs/common": "^10.0.0",
